@@ -1,26 +1,30 @@
-// Shared, platform-independent decision functions. Also compiled by tests/core_tests.cpp.
+// Aurum v3 shared decision rules: SNR + SND + Fibonacci.
+// Platform-independent: compiled by MT5 (MQL5) and by tests/core_tests.cpp (C++).
+// The TradingView v5 script implements the same rules; keep both in sync.
 #ifndef AURUM_CORE_MQH
 #define AURUM_CORE_MQH
 
-struct AurumRules
+// Signal modes. Confluence points: Supply/Demand zone = 2, S/R level = 1, Fibonacci = 1.
+// Every mode trades WITH the higher-timeframe trend only.
+#define AURUM_BALANCED   0   // needs 2 points: a zone, or S/R + Fibonacci
+#define AURUM_STRICT     1   // needs 3 points: zone + S/R or zone + Fibonacci
+#define AURUM_AGGRESSIVE 2   // needs 1 point: any single area
+
+// Fibonacci pullback ("golden") zone used for entries
+#define AURUM_FIB_NEAR 0.5
+#define AURUM_FIB_FAR  0.786
+
+struct AurumCandle
 {
-   double buyMin,buyMax,sellMin,sellMax;
-   double minATR,maxATR,maxRangeATR,maxSpread;
-   double breakoutBufferATR;
-   bool rejectZeroSpread,directionalCandle;
+   double open,high,low,close;
+   double atr;   // ATR of the PREVIOUS closed candle (the signal candle cannot inflate it)
 };
 
-struct AurumBar
+struct AurumSwing
 {
-   double open,high,low,close,fast,slow,rsi,atr,previousATR;
-   double previousHigh,previousLow,trendClose,trendEMA,spread;
-};
-
-struct AurumResult
-{
-   bool valid,trendBuy,trendSell,emaBuy,emaSell,rsiBuy,rsiSell,breakBuy,breakSell;
-   bool spreadOK,atrOK,rangeOK,candleBuy,candleSell;
-   int buyCount,sellCount,raw;
+   double high,low;
+   int dir;      // 1 = up-swing (low then high): look for BUY pullbacks
+                 // -1 = down-swing (high then low): look for SELL pullbacks; 0 = none
 };
 
 bool AurumNumber(const double x)
@@ -28,13 +32,213 @@ bool AurumNumber(const double x)
    return x==x && x>-1.0e100 && x<1.0e100;
 }
 
-// Select the latest nominally completed HTF bar at the entry candle close.
+double AurumMin(const double a,const double b) { return a<b?a:b; }
+double AurumMax(const double a,const double b) { return a>b?a:b; }
+double AurumAbs(const double a) { return a<0?-a:a; }
+
+bool AurumCandleValid(const AurumCandle &c)
+{
+   return AurumNumber(c.open) && AurumNumber(c.high) && AurumNumber(c.low) &&
+      AurumNumber(c.close) && AurumNumber(c.atr) && c.atr>0 && c.low>0 &&
+      c.high>=c.low && c.open<=c.high && c.open>=c.low &&
+      c.close<=c.high && c.close>=c.low;
+}
+
+// ---------- Candle confirmation ----------
+// BUY rejection: bullish close, OR a long lower wick (>= half the range) closing in the upper half.
+bool AurumBullRejection(const AurumCandle &c)
+{
+   double range=c.high-c.low;
+   if(range<=0) return false;
+   if(c.close>c.open) return true;
+   double lowerWick=AurumMin(c.open,c.close)-c.low;
+   return lowerWick>=0.5*range && c.close>=c.low+0.5*range;
+}
+
+bool AurumBearRejection(const AurumCandle &c)
+{
+   double range=c.high-c.low;
+   if(range<=0) return false;
+   if(c.close<c.open) return true;
+   double upperWick=c.high-AurumMax(c.open,c.close);
+   return upperWick>=0.5*range && c.close<=c.high-0.5*range;
+}
+
+// ---------- SND: supply and demand zones ----------
+// Demand: a strong bullish candle (body >= impulseATR x ATR) closing above the previous
+// candle's high. The previous candle is the "base". Zone = lowest low -> base body top.
+bool AurumDemandZone(const AurumCandle &base,const AurumCandle &impulse,const double impulseATR,
+                     double &bottom,double &top)
+{
+   double atr=impulse.atr;
+   if(atr<=0 || impulse.close-impulse.open<impulseATR*atr || impulse.close<=base.high) return false;
+   bottom=AurumMin(base.low,impulse.low);
+   top=AurumMax(base.open,base.close);
+   if(top-bottom<0.2*atr) top=bottom+0.2*atr;      // too thin: give it a minimum height
+   return top-bottom<=2.0*atr && top<impulse.close; // too tall = not a clean zone
+}
+
+// Supply: strong bearish candle closing below the previous candle's low.
+bool AurumSupplyZone(const AurumCandle &base,const AurumCandle &impulse,const double impulseATR,
+                     double &bottom,double &top)
+{
+   double atr=impulse.atr;
+   if(atr<=0 || impulse.open-impulse.close<impulseATR*atr || impulse.close>=base.low) return false;
+   top=AurumMax(base.high,impulse.high);
+   bottom=AurumMin(base.open,base.close);
+   if(top-bottom<0.2*atr) bottom=top-0.2*atr;
+   return top-bottom<=2.0*atr && bottom>impulse.close;
+}
+
+// Price dipped into the demand zone and CLOSED back above it.
+bool AurumDemandTouch(const AurumCandle &c,const double bottom,const double top,const double tol)
+{
+   return top>bottom && c.low<=top+tol && c.close>top;
+}
+
+// Price rallied into the supply zone and CLOSED back below it.
+bool AurumSupplyTouch(const AurumCandle &c,const double bottom,const double top,const double tol)
+{
+   return top>bottom && c.high>=bottom-tol && c.close<bottom;
+}
+
+// Zones are removed once a candle CLOSES through them.
+bool AurumDemandBroken(const double close,const double bottom) { return close<bottom; }
+bool AurumSupplyBroken(const double close,const double top)    { return close>top; }
+
+// ---------- SNR: support and resistance ----------
+bool AurumSupportTouch(const AurumCandle &c,const double level,const double tol)
+{
+   return level>0 && c.low<=level+tol && c.close>level;
+}
+
+bool AurumResistanceTouch(const AurumCandle &c,const double level,const double tol)
+{
+   return level>0 && c.high>=level-tol && c.close<level;
+}
+
+// Two levels closer than tol are treated as the same level.
+bool AurumSameLevel(const double a,const double b,const double tol)
+{
+   return AurumAbs(a-b)<=tol;
+}
+
+// ---------- Fibonacci ----------
+// Retracement price for a ratio of the latest swing (0 = swing end, 1 = swing start).
+// Ratios above 1 are not used; extensions use AurumFibExtension.
+double AurumFibPrice(const AurumSwing &s,const double ratio)
+{
+   double size=s.high-s.low;
+   return s.dir>0?s.high-ratio*size:s.low+ratio*size;
+}
+
+// Target beyond the swing end: 1.618 extension -> ratio 0.618 beyond the swing end.
+double AurumFibExtension(const AurumSwing &s,const double extension)
+{
+   double size=s.high-s.low;
+   return s.dir>0?s.high+(extension-1.0)*size:s.low-(extension-1.0)*size;
+}
+
+bool AurumSwingValid(const AurumSwing &s)
+{
+   return s.dir!=0 && AurumNumber(s.high) && AurumNumber(s.low) && s.high>s.low && s.low>0;
+}
+
+// Candle low pulled back into the 0.5 - 0.786 zone of an up-swing and closed above 0.786.
+bool AurumFibBuy(const AurumCandle &c,const AurumSwing &s,const double tol)
+{
+   if(!AurumSwingValid(s) || s.dir<=0) return false;
+   double nearPrice=AurumFibPrice(s,AURUM_FIB_NEAR);
+   double farPrice=AurumFibPrice(s,AURUM_FIB_FAR);
+   return c.low<=nearPrice+tol && c.low>=farPrice-tol && c.close>farPrice;
+}
+
+// Candle high pulled back into the 0.5 - 0.786 zone of a down-swing and closed below 0.786.
+bool AurumFibSell(const AurumCandle &c,const AurumSwing &s,const double tol)
+{
+   if(!AurumSwingValid(s) || s.dir>=0) return false;
+   double nearPrice=AurumFibPrice(s,AURUM_FIB_NEAR);
+   double farPrice=AurumFibPrice(s,AURUM_FIB_FAR);
+   return c.high>=nearPrice-tol && c.high<=farPrice+tol && c.close<farPrice;
+}
+
+// ---------- Decision ----------
+// Confluence points (0-4). A supply/demand zone counts double.
+int AurumScore(const bool zone,const bool level,const bool fib)
+{
+   return (zone?2:0)+(level?1:0)+(fib?1:0);
+}
+
+int AurumPointsNeeded(const int mode)
+{
+   return mode==AURUM_STRICT?3:mode==AURUM_AGGRESSIVE?1:2;
+}
+
+// Returns 1 BUY, -1 SELL, 0 none. trendDir: 1 up, -1 down, 0 unknown/flat.
+int AurumDecide(const int mode,const int trendDir,
+                const bool buyRejection,const int buyScore,
+                const bool sellRejection,const int sellScore)
+{
+   int need=AurumPointsNeeded(mode);
+   bool buy=buyRejection && buyScore>=need && trendDir>0;
+   bool sell=sellRejection && sellScore>=need && trendDir<0;
+   if(buy && sell) return 0;   // conflicting evidence on one candle: stand aside
+   return buy?1:sell?-1:0;
+}
+
+// Same-direction signals need a gap of more than cooldown candles. lastBar<0 = none yet.
+bool AurumCooldownOK(const int bar,const int lastBar,const int cooldown)
+{
+   return lastBar<0 || bar-lastBar>cooldown;
+}
+
+// ---------- Trade levels ----------
+// Stop beyond the structure that was touched, at least minRiskATR x ATR from entry.
+double AurumBuyStop(const double entry,const double structureLow,const double atr,
+                    const double bufferATR,const double minRiskATR)
+{
+   double stop=structureLow-bufferATR*atr;
+   return AurumMin(stop,entry-minRiskATR*atr);
+}
+
+double AurumSellStop(const double entry,const double structureHigh,const double atr,
+                     const double bufferATR,const double minRiskATR)
+{
+   double stop=structureHigh+bufferATR*atr;
+   return AurumMax(stop,entry+minRiskATR*atr);
+}
+
+// nearest: closest opposing S/R, supply zone or swing high that is at least 1R above entry
+// (<=0 if none). fibTarget: 1.618 extension of the up-swing (<=0 if none).
+void AurumBuyTargets(const double entry,const double stop,const double nearest,
+                     const double fibTarget,double &tp1,double &tp2)
+{
+   double risk=entry-stop;
+   tp1=nearest>=entry+risk?nearest:entry+1.5*risk;
+   tp2=fibTarget>tp1+0.5*risk?fibTarget:tp1+risk;
+}
+
+void AurumSellTargets(const double entry,const double stop,const double nearest,
+                      const double fibTarget,double &tp1,double &tp2)
+{
+   double risk=stop-entry;
+   tp1=(nearest>0 && nearest<=entry-risk)?nearest:entry-1.5*risk;
+   tp2=(fibTarget>0 && fibTarget<tp1-0.5*risk)?fibTarget:tp1-risk;
+}
+
+// Select the latest COMPLETED higher-timeframe bar at the entry candle close.
 // Handles an exact boundary, a forming containing bar, and a missing-bar gap.
 int AurumClosedTrendShift(const int containing,const long containingOpen,
                           const long decision,const int seconds)
 {
    if(containing<0 || containingOpen<=0 || seconds<=0 || containingOpen>decision) return -1;
    return containingOpen+seconds<=decision?containing:containing+1;
+}
+
+int AurumTrendDir(const double htfClose,const double htfEMA)
+{
+   if(!AurumNumber(htfClose) || !AurumNumber(htfEMA) || htfClose<=0 || htfEMA<=0) return 0;
+   return htfClose>htfEMA?1:htfClose<htfEMA?-1:0;
 }
 
 bool AurumQuoteFresh(const long now,const long tickTime,const int maxAge)
@@ -45,51 +249,5 @@ bool AurumQuoteFresh(const long now,const long tickTime,const int maxAge)
 bool AurumAlertOnTime(const long now,const long candleClose,const int maxDelay)
 {
    return now>=candleClose && now-candleClose<=maxDelay;
-}
-
-// Candidate-based quiet period, independent of the visible history-window start.
-bool AurumQuietBar(const int raw,const bool historyValid,const bool recentCandidate)
-{
-   return raw!=0 && historyValid && !recentCandidate;
-}
-
-void AurumEvaluate(const AurumBar &b,const AurumRules &p,AurumResult &r)
-{
-   r.valid=AurumNumber(b.open) && AurumNumber(b.high) && AurumNumber(b.low) &&
-      AurumNumber(b.close) && AurumNumber(b.fast) && AurumNumber(b.slow) &&
-      AurumNumber(b.rsi) && AurumNumber(b.atr) && AurumNumber(b.previousATR) &&
-      AurumNumber(b.previousHigh) && AurumNumber(b.previousLow) &&
-      AurumNumber(b.trendClose) && AurumNumber(b.trendEMA) && AurumNumber(b.spread) &&
-      b.open>0 && b.low>0 && b.close>0 && b.fast>0 && b.slow>0 &&
-      b.high>=b.low && b.close<=b.high && b.close>=b.low &&
-      b.open<=b.high && b.open>=b.low && b.rsi>=0 && b.rsi<=100 &&
-      b.atr>0 && b.previousATR>0 && b.previousHigh>=b.previousLow &&
-      b.previousLow>0 && b.trendClose>0 && b.trendEMA>0;
-   r.trendBuy=false; r.trendSell=false; r.emaBuy=false; r.emaSell=false;
-   r.rsiBuy=false; r.rsiSell=false; r.breakBuy=false; r.breakSell=false;
-   r.spreadOK=false; r.atrOK=false; r.rangeOK=false;
-   r.candleBuy=false; r.candleSell=false; r.buyCount=0; r.sellCount=0; r.raw=0;
-   if(!r.valid) return;
-   r.trendBuy=b.trendClose>b.trendEMA; r.trendSell=b.trendClose<b.trendEMA;
-   r.emaBuy=b.fast>b.slow && b.close>b.fast;
-   r.emaSell=b.fast<b.slow && b.close<b.fast;
-   r.rsiBuy=b.rsi>=p.buyMin && b.rsi<=p.buyMax;
-   r.rsiSell=b.rsi>=p.sellMin && b.rsi<=p.sellMax;
-   double margin=p.breakoutBufferATR*b.previousATR;
-   r.breakBuy=b.close>b.previousHigh+margin;
-   r.breakSell=b.close<b.previousLow-margin;
-   r.spreadOK=b.spread>=0 && (!p.rejectZeroSpread || b.spread>0) && b.spread<=p.maxSpread;
-   r.atrOK=b.atr>=p.minATR && (p.maxATR==0 || b.atr<=p.maxATR);
-   // Previous ATR prevents the signal candle itself from inflating its range allowance.
-   r.rangeOK=b.high-b.low<=p.maxRangeATR*b.previousATR;
-   r.candleBuy=!p.directionalCandle || b.close>b.open;
-   r.candleSell=!p.directionalCandle || b.close<b.open;
-   r.buyCount=(int)r.trendBuy+(int)r.emaBuy+(int)r.rsiBuy+(int)r.breakBuy;
-   r.sellCount=(int)r.trendSell+(int)r.emaSell+(int)r.rsiSell+(int)r.breakSell;
-   if(r.spreadOK && r.atrOK && r.rangeOK)
-   {
-      if(r.buyCount==4 && r.candleBuy) r.raw=1;
-      else if(r.sellCount==4 && r.candleSell) r.raw=-1;
-   }
 }
 #endif

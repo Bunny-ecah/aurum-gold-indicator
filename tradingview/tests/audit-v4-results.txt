@@ -1,2 +1,0 @@
-61 source-expression/contract/model tests; 0 failures; 0 errors.
-Not a Pine compiler, series-engine or broker test.
