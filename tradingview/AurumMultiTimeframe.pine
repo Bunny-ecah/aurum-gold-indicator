@@ -1,0 +1,241 @@
+//@version=6
+indicator("Aurum Gold - Multi-Timeframe v2", shorttitle="Aurum MTF", overlay=true, max_bars_back=5000)
+
+// Demo research presets, not optimized or validated trading recommendations.
+// Confirmed HTF snapshots are taken at ENTRY BAR OPEN, via [1] + lookahead_on.
+string profile = input.string("Auto chart", "Timeframe profile", options=["Auto chart", "1 minute", "5 minutes", "15 minutes", "30 minutes", "1 hour"], group="Profile")
+string setupInput = input.string("Auto profile", "Setup type", options=["Auto profile", "EMA pullback reclaim", "Range breakout", "Breakout retest", "Momentum breakout"], group="Profile")
+bool useDefaults = input.bool(true, "Use timeframe preset parameters", group="Profile", tooltip="Turn off to use the Manual parameters below. Retest window/tolerance and filter toggles always remain editable.")
+bool requireContext = input.bool(true, "Require second higher-timeframe trend", group="Filters")
+bool requireDMI = input.bool(true, "Require ADX strength and DI direction", group="Filters")
+bool directionalCandle = input.bool(true, "Require bullish BUY / bearish SELL candle", group="Filters")
+float minATR = input.float(0.0, "Minimum ATR in price units (0 = off)", minval=0, group="Filters")
+float maxATR = input.float(0.0, "Maximum ATR in price units (0 = off)", minval=0, group="Filters")
+bool limitExtension = input.bool(true, "Block price stretched from fast EMA", group="Filters")
+int retestBars = input.int(3, "Retest within N candles after breakout", minval=1, maxval=10, group="Retest")
+float retestTolerance = input.float(0.20, "Retest zone tolerance / breakout's prior ATR", minval=0, maxval=2, step=0.05, group="Retest")
+int manualFast = input.int(20, "Fast EMA", minval=2, maxval=1000, group="Manual parameters")
+int manualSlow = input.int(50, "Slow EMA", minval=3, maxval=2000, group="Manual parameters")
+float manualBuyMin = input.float(55, "BUY RSI minimum", minval=0, maxval=100, group="Manual parameters")
+float manualBuyMax = input.float(70, "BUY RSI maximum", minval=0, maxval=100, group="Manual parameters")
+float manualSellMin = input.float(30, "SELL RSI minimum", minval=0, maxval=100, group="Manual parameters")
+float manualSellMax = input.float(45, "SELL RSI maximum", minval=0, maxval=100, group="Manual parameters")
+int manualBreakout = input.int(5, "Breakout range candles", minval=1, maxval=500, group="Manual parameters")
+float manualBuffer = input.float(0.05, "Breakout distance / previous ATR", minval=0, maxval=3, step=0.05, group="Manual parameters")
+float manualADX = input.float(20, "ADX minimum", minval=0, maxval=100, group="Manual parameters")
+float manualRange = input.float(2.0, "Maximum candle range / previous ATR", minval=0.1, maxval=10, group="Manual parameters")
+float manualExtension = input.float(1.5, "Maximum close-to-fast-EMA distance / prior ATR", minval=0.1, maxval=10, group="Manual parameters")
+int manualQuiet = input.int(3, "Required prior candidate-free candles", minval=0, maxval=100, group="Manual parameters")
+int trendLength = input.int(200, "Higher-timeframe EMA period", minval=2, maxval=2000, group="Shared indicator periods")
+int rsiLength = input.int(14, "RSI period", minval=2, maxval=1000, group="Shared indicator periods")
+int atrLength = input.int(14, "ATR period", minval=2, maxval=1000, group="Shared indicator periods")
+int diLength = input.int(14, "DI period", minval=2, maxval=100, group="Shared indicator periods")
+int adxSmoothing = input.int(14, "ADX smoothing", minval=2, maxval=100, group="Shared indicator periods")
+bool showEMAs = input.bool(true, "Show closed-candle EMAs", group="Display")
+bool showSignals = input.bool(true, "Show BUY / SELL labels", group="Display")
+bool showPanel = input.bool(true, "Show closed-candle checklist", group="Display")
+bool showRetestZone = input.bool(true, "Show current retest anchor", group="Display")
+bool enableAlerts = input.bool(true, "Enable alert conditions", group="Alerts")
+
+int selectedMinutes = switch profile
+    "1 minute" => 1
+    "5 minutes" => 5
+    "15 minutes" => 15
+    "30 minutes" => 30
+    "1 hour" => 60
+    => timeframe.multiplier
+bool supported = timeframe.isminutes and (selectedMinutes == 1 or selectedMinutes == 5 or selectedMinutes == 15 or selectedMinutes == 30 or selectedMinutes == 60)
+string trendTF = switch selectedMinutes
+    1 => "5"
+    5 => "15"
+    15 => "60"
+    30 => "120"
+    => "240"
+string contextTF = switch selectedMinutes
+    1 => "15"
+    5 => "60"
+    15 => "240"
+    30 => "240"
+    => "1D"
+string defaultSetup = switch selectedMinutes
+    1 => "EMA pullback reclaim"
+    15 => "Breakout retest"
+    30 => "Momentum breakout"
+    => "Range breakout"
+string setup = setupInput == "Auto profile" ? defaultSetup : setupInput
+int fastLength = useDefaults ? (selectedMinutes == 1 ? 9 : 20) : manualFast
+int slowLength = useDefaults ? (selectedMinutes == 1 ? 21 : 50) : manualSlow
+float buyMin = useDefaults ? (selectedMinutes == 1 ? 58.0 : 55.0) : manualBuyMin
+float buyMax = useDefaults ? (selectedMinutes == 1 ? 68.0 : 70.0) : manualBuyMax
+float sellMin = useDefaults ? (selectedMinutes == 1 ? 32.0 : 30.0) : manualSellMin
+float sellMax = useDefaults ? (selectedMinutes == 1 ? 42.0 : 45.0) : manualSellMax
+int breakoutLength = useDefaults ? (selectedMinutes == 30 ? 8 : 5) : manualBreakout
+float breakoutBuffer = useDefaults ? (selectedMinutes == 30 ? 0.10 : 0.05) : manualBuffer
+float minADX = useDefaults ? (selectedMinutes == 1 or selectedMinutes == 30 ? 22.0 : 20.0) : manualADX
+float maxRangeATR = useDefaults ? (selectedMinutes == 1 ? 1.5 : 2.0) : manualRange
+float maxExtension = useDefaults ? (selectedMinutes == 1 ? 1.25 : selectedMinutes == 30 ? 2.0 : 1.5) : manualExtension
+int quietBars = useDefaults ? (selectedMinutes == 1 ? 5 : 3) : manualQuiet
+if barstate.isfirst
+    if not supported
+        runtime.error("Use a standard 1m, 5m, 15m, 30m or 1h chart.")
+    if timeframe.multiplier != selectedMinutes
+        runtime.error("Selected profile does not match the chart. Use Auto chart or match both timeframes.")
+    if not chart.is_standard
+        runtime.error("Use standard time-based candles. Synthetic candles are not supported.")
+    if fastLength >= slowLength
+        runtime.error("Fast EMA must be shorter than Slow EMA.")
+    if buyMin > buyMax or sellMin > sellMax or sellMax >= buyMin
+        runtime.error("Invalid RSI ranges. SELL maximum must be below BUY minimum.")
+    if maxATR > 0 and maxATR < minATR
+        runtime.error("Maximum ATR must be zero (off) or at least Minimum ATR.")
+
+float fastEMA = ta.ema(close, fastLength)
+float slowEMA = ta.ema(close, slowLength)
+float rsiValue = ta.rsi(close, rsiLength)
+float atrValue = ta.atr(atrLength)
+float priorATR = atrValue[1]
+float rangeHigh = ta.highest(high[1], breakoutLength)
+float rangeLow = ta.lowest(low[1], breakoutLength)
+[plusDI, minusDI, adxValue] = ta.dmi(diLength, adxSmoothing)
+[macdLine, macdSignal, macdHistogram] = ta.macd(close, 12, 26, 9)
+// Offsets apply to ALL tuple elements. No forming higher-timeframe close is used.
+[trendClose, trendEMA, trendIndex] = request.security(syminfo.tickerid, trendTF, [close[1], ta.ema(close, trendLength)[1], bar_index[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[contextClose, contextEMA, contextIndex] = request.security(syminfo.tickerid, contextTF, [close[1], ta.ema(close, trendLength)[1], bar_index[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+bool contextReady = not na(contextClose) and not na(contextEMA) and not na(contextIndex) and contextIndex >= trendLength + 10
+bool entryReady = bar_index >= math.max(slowLength, math.max(rsiLength, math.max(atrLength, diLength + adxSmoothing))) + breakoutLength + retestBars + 10
+bool baseReady = entryReady and not na(fastEMA) and not na(slowEMA) and not na(rsiValue) and not na(priorATR) and priorATR > 0 and not na(atrValue) and atrValue > 0 and not na(rangeHigh) and not na(rangeLow) and not na(trendClose) and not na(trendEMA) and not na(trendIndex) and trendIndex >= trendLength + 10 and (not requireContext or contextReady)
+bool dmiReady = not requireDMI or (not na(adxValue) and not na(plusDI) and not na(minusDI))
+bool momentumReady = setup != "Momentum breakout" or (not na(macdHistogram) and not na(macdHistogram[1]))
+bool dataReady = baseReady and dmiReady and momentumReady
+bool trendBuy = dataReady and trendClose > trendEMA and (not requireContext or contextClose > contextEMA)
+bool trendSell = dataReady and trendClose < trendEMA and (not requireContext or contextClose < contextEMA)
+bool emaBuy = dataReady and fastEMA > slowEMA and close > fastEMA
+bool emaSell = dataReady and fastEMA < slowEMA and close < fastEMA
+bool rsiBuy = dataReady and rsiValue >= buyMin and rsiValue <= buyMax
+bool rsiSell = dataReady and rsiValue >= sellMin and rsiValue <= sellMax
+bool strengthBuy = dataReady and (not requireDMI or (adxValue >= minADX and plusDI > minusDI))
+bool strengthSell = dataReady and (not requireDMI or (adxValue >= minADX and minusDI > plusDI))
+
+// Breakouts use ONLY the preceding N candles and the previous candle ATR.
+bool breakoutBuy = baseReady and close > rangeHigh + breakoutBuffer * priorATR
+bool breakoutSell = baseReady and close < rangeLow - breakoutBuffer * priorATR
+// 1m default: preceding candle closes on/below fast EMA, current close reclaims
+// that EMA AND the previous candle high. SELL mirrors this exactly.
+bool reclaimBuy = baseReady and not na(fastEMA[1]) and low[1] <= fastEMA[1] and close[1] <= fastEMA[1] and close > fastEMA and close > high[1]
+bool reclaimSell = baseReady and not na(fastEMA[1]) and high[1] >= fastEMA[1] and close[1] >= fastEMA[1] and close < fastEMA and close < low[1]
+
+// 15m default: most recent breakout within a bounded window, then a LATER
+// candle tests the original, FIXED range level. Never use same-candle retests.
+bool retestBuy = false
+bool retestSell = false
+float buyAnchor = na
+float sellAnchor = na
+if setup == "Breakout retest"
+    bool foundBuy = false
+    bool foundSell = false
+    for j = 1 to retestBars
+        if not foundBuy and breakoutBuy[j]
+            foundBuy := true
+            float level = rangeHigh[j]
+            float tolerance = retestTolerance * priorATR[j]
+            bool held = true
+            if j > 1
+                for m = 1 to j - 1
+                    if close[m] < level
+                        held := false
+            buyAnchor := level
+            retestBuy := held and low >= level - tolerance and low <= level + tolerance and close > level
+        if not foundSell and breakoutSell[j]
+            foundSell := true
+            float level = rangeLow[j]
+            float tolerance = retestTolerance * priorATR[j]
+            bool held = true
+            if j > 1
+                for m = 1 to j - 1
+                    if close[m] > level
+                        held := false
+            sellAnchor := level
+            retestSell := held and high >= level - tolerance and high <= level + tolerance and close < level
+
+// 30m default: range breakout + expanding MACD histogram + fast EMA slope.
+bool momentumBuy = breakoutBuy and macdHistogram > 0 and macdHistogram > macdHistogram[1] and fastEMA > fastEMA[1]
+bool momentumSell = breakoutSell and macdHistogram < 0 and macdHistogram < macdHistogram[1] and fastEMA < fastEMA[1]
+bool triggerBuy = switch setup
+    "EMA pullback reclaim" => reclaimBuy
+    "Breakout retest" => retestBuy
+    "Momentum breakout" => momentumBuy
+    => breakoutBuy
+bool triggerSell = switch setup
+    "EMA pullback reclaim" => reclaimSell
+    "Breakout retest" => retestSell
+    "Momentum breakout" => momentumSell
+    => breakoutSell
+
+bool atrOK = dataReady and atrValue >= minATR and (maxATR == 0 or atrValue <= maxATR)
+bool rangeOK = dataReady and high - low <= maxRangeATR * priorATR
+bool extensionOK = dataReady and (not limitExtension or math.abs(close - fastEMA) <= maxExtension * priorATR)
+bool candleBuy = not directionalCandle or close > open
+bool candleSell = not directionalCandle or close < open
+int buyCount = (trendBuy ? 1 : 0) + (emaBuy ? 1 : 0) + (rsiBuy ? 1 : 0) + (triggerBuy ? 1 : 0) + (strengthBuy ? 1 : 0)
+int sellCount = (trendSell ? 1 : 0) + (emaSell ? 1 : 0) + (rsiSell ? 1 : 0) + (triggerSell ? 1 : 0) + (strengthSell ? 1 : 0)
+int requiredCount = requireDMI ? 5 : 4
+// Disabled DMI is omitted from the visible count, rather than credited as evidence.
+int visibleBuyCount = buyCount - (not requireDMI and strengthBuy ? 1 : 0)
+int visibleSellCount = sellCount - (not requireDMI and strengthSell ? 1 : 0)
+bool rawBuy = dataReady and trendBuy and emaBuy and rsiBuy and triggerBuy and strengthBuy and atrOK and rangeOK and extensionOK and candleBuy
+bool rawSell = dataReady and trendSell and emaSell and rsiSell and triggerSell and strengthSell and atrOK and rangeOK and extensionOK and candleSell
+bool rawCandidate = rawBuy or rawSell
+bool recentCandidate = false
+bool historyReady = dataReady
+if quietBars > 0
+    for j = 1 to quietBars
+        recentCandidate := recentCandidate or rawCandidate[j]
+        historyReady := historyReady and dataReady[j]
+bool quietOK = historyReady and not recentCandidate
+bool buySignal = barstate.isconfirmed and rawBuy and quietOK
+bool sellSignal = barstate.isconfirmed and rawSell and quietOK
+
+plot(showEMAs and barstate.isconfirmed ? fastEMA : na, "Fast EMA", color=color.orange, linewidth=2, style=plot.style_linebr)
+plot(showEMAs and barstate.isconfirmed ? slowEMA : na, "Slow EMA", color=color.gray, linewidth=2, style=plot.style_linebr)
+plot(showRetestZone and barstate.isconfirmed ? buyAnchor : na, "BUY retest anchor", color=color.teal, style=plot.style_linebr)
+plot(showRetestZone and barstate.isconfirmed ? sellAnchor : na, "SELL retest anchor", color=color.red, style=plot.style_linebr)
+plotshape(showSignals and buySignal, title="BUY confirmation", style=shape.labelup, location=location.belowbar, color=color.teal, text="BUY", textcolor=color.white, size=size.tiny)
+plotshape(showSignals and sellSignal, title="SELL confirmation", style=shape.labeldown, location=location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.tiny)
+alertcondition(enableAlerts and buySignal, title="Aurum BUY confirmation", message="Aurum MTF BUY | {{ticker}} | {{interval}} | close {{close}} | closed-candle rules passed. Check broker spread. Demo only.")
+alertcondition(enableAlerts and sellSignal, title="Aurum SELL confirmation", message="Aurum MTF SELL | {{ticker}} | {{interval}} | close {{close}} | closed-candle rules passed. Check broker spread. Demo only.")
+alertcondition(enableAlerts and (buySignal or sellSignal), title="Aurum ANY confirmation", message="Aurum MTF setup | {{ticker}} | {{interval}} | close {{close}} | inspect BUY/SELL marker and broker spread. Demo only.")
+
+f_pass(bool value) => value ? "PASS" : "--"
+f_row(table t, int row, string label, string b, string s) =>
+    table.cell(t, 0, row, label, text_color=color.white, text_size=size.small)
+    table.cell(t, 1, row, b, text_color=color.white, text_size=size.small)
+    table.cell(t, 2, row, s, text_color=color.white, text_size=size.small)
+
+var table panel = table.new(position.top_right, 3, 18, bgcolor=color.new(color.black, 15), frame_color=color.gray, frame_width=1)
+if barstate.islast
+    if showPanel
+        int k = barstate.isconfirmed ? 0 : 1
+        string status = not dataReady[k] ? "WAIT: DATA" : buySignal[k] ? "BUY SETUP" : sellSignal[k] ? "SELL SETUP" : "WAIT"
+        string blocker = not dataReady[k] ? "Loading indicators" : not historyReady[k] ? "Quiet history missing" : not quietOK[k] ? "Quiet period" : not atrOK[k] ? "ATR bounds" : not rangeOK[k] ? "Large candle" : not extensionOK[k] ? "Price stretched" : "Inspect checklist"
+        string candleTime = na(time_close[k]) ? "--" : str.format_time(time_close[k], "MM-dd HH:mm", syminfo.timezone)
+        f_row(panel, 0, "AURUM MTF v2", "BUY", "SELL")
+        f_row(panel, 1, str.tostring(selectedMinutes) + "m / " + trendTF + " / " + contextTF, "", "")
+        f_row(panel, 2, setup, "", "")
+        f_row(panel, 3, "Closed (exchange TZ)", candleTime, "")
+        f_row(panel, 4, "Setup", status, "")
+        f_row(panel, 5, requireContext ? "Two HTF trends" : "One HTF trend", f_pass(trendBuy[k]), f_pass(trendSell[k]))
+        f_row(panel, 6, "EMA alignment", f_pass(emaBuy[k]), f_pass(emaSell[k]))
+        f_row(panel, 7, "RSI momentum", f_pass(rsiBuy[k]), f_pass(rsiSell[k]))
+        f_row(panel, 8, "Setup trigger", f_pass(triggerBuy[k]), f_pass(triggerSell[k]))
+        f_row(panel, 9, "ADX + DI", requireDMI ? f_pass(strengthBuy[k]) : "OFF", requireDMI ? f_pass(strengthSell[k]) : "OFF")
+        f_row(panel, 10, "Rule count (not odds)", str.tostring(visibleBuyCount[k]) + "/" + str.tostring(requiredCount), str.tostring(visibleSellCount[k]) + "/" + str.tostring(requiredCount))
+        f_row(panel, 11, "ATR / candle range", f_pass(atrOK[k]), f_pass(rangeOK[k]))
+        f_row(panel, 12, "Distance / quiet", f_pass(extensionOK[k]), f_pass(quietOK[k]))
+        f_row(panel, 13, "Candle direction", f_pass(candleBuy[k]), f_pass(candleSell[k]))
+        f_row(panel, 14, "EMA / ADX min", str.tostring(fastLength) + "/" + str.tostring(slowLength), str.tostring(minADX))
+        f_row(panel, 15, "Status detail", buySignal[k] or sellSignal[k] ? "Rules passed" : blocker, "")
+        f_row(panel, 16, "Broker spread", "CHECK MT5", "Unavailable")
+        f_row(panel, 17, "Demo research", "No win odds", "Manual entry")
+    else
+        table.clear(panel, 0, 0, 2, 17)

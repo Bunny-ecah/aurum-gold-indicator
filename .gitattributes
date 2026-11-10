@@ -1,0 +1,8 @@
+* text=auto
+*.py text eol=lf
+*.pine text eol=lf
+*.mq5 text eol=lf
+*.mqh text eol=lf
+*.md text eol=lf
+*.cpp text eol=lf
+*.cmd text eol=crlf

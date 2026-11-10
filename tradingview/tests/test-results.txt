@@ -1,0 +1,2 @@
+25 rule-expression/model tests; 0 failures; 0 errors.
+Not a Pine compiler or TradingView runtime test.

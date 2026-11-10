@@ -1,0 +1,121 @@
+//@version=6
+indicator("Aurum Confirmation - Gold Demo", shorttitle="Aurum Gold", overlay=true, max_bars_back=5000)
+
+// TradingView adaptation of Aurum MT5 v2. Not a broker-spread-equivalent port.
+// HTF values are confirmed snapshots available at ENTRY BAR OPEN.
+// Offset + lookahead_on is deliberate: never remove the [1] offsets.
+
+string mode = input.string("Longer trades", "Trade mode", options=["Scalping", "Longer trades"], group="Mode")
+int fastLength = input.int(20, "Fast EMA", minval=2, maxval=1000, group="Confirmation")
+int slowLength = input.int(50, "Slow EMA", minval=3, maxval=2000, group="Confirmation")
+int trendLength = input.int(200, "Higher-timeframe EMA", minval=2, maxval=2000, group="Confirmation")
+int rsiLength = input.int(14, "RSI period", minval=2, maxval=1000, group="Confirmation")
+float buyMin = input.float(55.0, "BUY RSI minimum", minval=0, maxval=100, group="Confirmation")
+float buyMax = input.float(70.0, "BUY RSI maximum", minval=0, maxval=100, group="Confirmation")
+float sellMin = input.float(30.0, "SELL RSI minimum", minval=0, maxval=100, group="Confirmation")
+float sellMax = input.float(45.0, "SELL RSI maximum", minval=0, maxval=100, group="Confirmation")
+int breakoutLength = input.int(5, "Previous candles in breakout range", minval=1, maxval=500, group="Confirmation")
+float breakoutBuffer = input.float(0.0, "Breakout distance / previous ATR", minval=0, step=0.05, group="Confirmation")
+bool directionalCandle = input.bool(true, "Require bullish BUY / bearish SELL candle", group="Confirmation")
+int atrLength = input.int(14, "ATR period", minval=2, maxval=1000, group="Filters")
+float minATR = input.float(0.0, "Minimum ATR in price units (0 = off)", minval=0, group="Filters")
+float maxATR = input.float(0.0, "Maximum ATR in price units (0 = off)", minval=0, group="Filters")
+float maxRangeATR = input.float(2.0, "Maximum candle range / previous ATR", minval=0.1, step=0.1, group="Filters")
+int quietBars = input.int(3, "Required prior candidate-free candles", minval=0, maxval=100, group="Filters")
+bool showEMAs = input.bool(true, "Show closed-candle EMAs", group="Display")
+bool showSignals = input.bool(true, "Show BUY / SELL markers", group="Display")
+bool showPanel = input.bool(true, "Show confirmation panel", group="Display")
+bool enableAlerts = input.bool(true, "Enable alert conditions", group="Alerts")
+
+bool scalp = mode == "Scalping"
+string entryTF = scalp ? "5" : "60"
+string trendTF = scalp ? "15" : "240"
+if barstate.isfirst
+    if timeframe.in_seconds() != timeframe.in_seconds(entryTF)
+        runtime.error("Wrong timeframe. Scalping requires a 5-minute chart; Longer trades requires a 1-hour chart.")
+    if not chart.is_standard
+        runtime.error("Use standard time-based candles, not Heikin Ashi, Renko or other synthetic charts.")
+    if fastLength >= slowLength
+        runtime.error("Fast EMA must be shorter than Slow EMA.")
+    if buyMin > buyMax or sellMin > sellMax or sellMax >= buyMin
+        runtime.error("Invalid RSI ranges: SELL maximum must be below BUY minimum.")
+    if maxATR > 0 and maxATR < minATR
+        runtime.error("Maximum ATR must be zero (off) or at least Minimum ATR.")
+
+float fastEMA = ta.ema(close, fastLength)
+float slowEMA = ta.ema(close, slowLength)
+float rsiValue = ta.rsi(close, rsiLength)
+float atrValue = ta.atr(atrLength)
+float priorATR = atrValue[1]
+float rangeHigh = ta.highest(high[1], breakoutLength)
+float rangeLow = ta.lowest(low[1], breakoutLength)
+
+// Same confirmed HTF values on historical and realtime entry bars.
+// A just-completed HTF bar becomes available on the NEXT entry bar.
+[trendClose, trendEMA, trendBarIndex] = request.security(syminfo.tickerid, trendTF, [close[1], ta.ema(close, trendLength)[1], bar_index[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+bool dataReady = not na(fastEMA) and not na(slowEMA) and not na(rsiValue) and not na(priorATR) and not na(trendClose) and not na(trendEMA) and not na(rangeHigh) and not na(rangeLow) and not na(trendBarIndex) and priorATR > 0 and atrValue > 0 and trendBarIndex >= trendLength + 10 and bar_index >= math.max(slowLength, math.max(rsiLength, atrLength)) + breakoutLength + 10
+bool trendBuy = dataReady and trendClose > trendEMA
+bool trendSell = dataReady and trendClose < trendEMA
+bool emaBuy = dataReady and fastEMA > slowEMA and close > fastEMA
+bool emaSell = dataReady and fastEMA < slowEMA and close < fastEMA
+bool rsiBuy = dataReady and rsiValue >= buyMin and rsiValue <= buyMax
+bool rsiSell = dataReady and rsiValue >= sellMin and rsiValue <= sellMax
+bool breakBuy = dataReady and close > rangeHigh + breakoutBuffer * priorATR
+bool breakSell = dataReady and close < rangeLow - breakoutBuffer * priorATR
+bool atrOK = dataReady and atrValue >= minATR and (maxATR == 0 or atrValue <= maxATR)
+bool rangeOK = dataReady and high - low <= maxRangeATR * priorATR
+bool candleBuy = not directionalCandle or close > open
+bool candleSell = not directionalCandle or close < open
+int buyCount = (trendBuy ? 1 : 0) + (emaBuy ? 1 : 0) + (rsiBuy ? 1 : 0) + (breakBuy ? 1 : 0)
+int sellCount = (trendSell ? 1 : 0) + (emaSell ? 1 : 0) + (rsiSell ? 1 : 0) + (breakSell ? 1 : 0)
+bool rawBuy = dataReady and buyCount == 4 and atrOK and rangeOK and candleBuy
+bool rawSell = dataReady and sellCount == 4 and atrOK and rangeOK and candleSell
+bool rawCandidate = rawBuy or rawSell
+
+// Quiet period examines RAW candidates, not prior accepted arrows.
+bool recentCandidate = false
+bool historyReady = dataReady
+if quietBars > 0
+    for j = 1 to quietBars
+        recentCandidate := recentCandidate or rawCandidate[j]
+        historyReady := historyReady and dataReady[j]
+bool quietOK = historyReady and not recentCandidate
+bool buySignal = barstate.isconfirmed and rawBuy and quietOK
+bool sellSignal = barstate.isconfirmed and rawSell and quietOK
+
+plot(showEMAs and barstate.isconfirmed ? fastEMA : na, "Fast EMA", color=color.orange, linewidth=2, style=plot.style_linebr)
+plot(showEMAs and barstate.isconfirmed ? slowEMA : na, "Slow EMA", color=color.gray, linewidth=2, style=plot.style_linebr)
+plotshape(showSignals and buySignal, title="BUY confirmation", style=shape.labelup, location=location.belowbar, color=color.teal, text="BUY", textcolor=color.white, size=size.tiny)
+plotshape(showSignals and sellSignal, title="SELL confirmation", style=shape.labeldown, location=location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.tiny)
+
+alertcondition(enableAlerts and buySignal, title="Aurum BUY confirmation", message="Aurum BUY | {{ticker}} | {{interval}} | closed candle price {{close}} | 4/4 rules. Check broker spread. Demo confirmation only.")
+alertcondition(enableAlerts and sellSignal, title="Aurum SELL confirmation", message="Aurum SELL | {{ticker}} | {{interval}} | closed candle price {{close}} | 4/4 rules. Check broker spread. Demo confirmation only.")
+alertcondition(enableAlerts and (buySignal or sellSignal), title="Aurum ANY confirmation", message="Aurum setup | {{ticker}} | {{interval}} | closed candle price {{close}} | inspect BUY/SELL marker and broker spread. Demo confirmation only.")
+
+f_pass(bool value) => value ? "PASS" : "--"
+f_row(table panel, int row, string label, string buyText, string sellText) =>
+    table.cell(panel, 0, row, label, text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, row, buyText, text_color=color.white, text_size=size.small)
+    table.cell(panel, 2, row, sellText, text_color=color.white, text_size=size.small)
+
+var table panel = table.new(position.top_right, 3, 12, bgcolor=color.new(color.black, 15), frame_color=color.gray, frame_width=1)
+if barstate.islast
+    if showPanel
+        // During the forming bar the entire checklist refers to the preceding closed bar.
+        int k = barstate.isconfirmed ? 0 : 1
+        string status = buySignal[k] ? "BUY SETUP" : sellSignal[k] ? "SELL SETUP" : "WAIT"
+        f_row(panel, 0, "AURUM GOLD", "BUY", "SELL")
+        f_row(panel, 1, mode, entryTF + "m", trendTF + "m trend")
+        f_row(panel, 2, "Last closed candle", status, "")
+        f_row(panel, 3, "HTF trend", f_pass(trendBuy[k]), f_pass(trendSell[k]))
+        f_row(panel, 4, "EMA alignment", f_pass(emaBuy[k]), f_pass(emaSell[k]))
+        f_row(panel, 5, "RSI momentum", f_pass(rsiBuy[k]), f_pass(rsiSell[k]))
+        f_row(panel, 6, "Breakout close", f_pass(breakBuy[k]), f_pass(breakSell[k]))
+        f_row(panel, 7, "Rule count", str.tostring(buyCount[k]) + "/4", str.tostring(sellCount[k]) + "/4")
+        f_row(panel, 8, "ATR / range", f_pass(atrOK[k]), f_pass(rangeOK[k]))
+        f_row(panel, 9, "Quiet / data", f_pass(quietOK[k]), f_pass(dataReady[k]))
+        f_row(panel, 10, "Broker spread", "CHECK MT5", "Not available")
+        f_row(panel, 11, "Demo confirmation", "Not win odds", "Manual entry")
+    else
+        table.clear(panel, 0, 0, 2, 11)
