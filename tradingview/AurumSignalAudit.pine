@@ -1,29 +1,28 @@
 //@version=6
-indicator("Aurum Gold v5 - SNR + SND + Fibonacci", shorttitle="Aurum v5", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=50, max_labels_count=300)
+indicator("Aurum Gold v5 - SNR + SND", shorttitle="Aurum v5", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=50, max_labels_count=300)
 
 // =====================================================================
 // AURUM GOLD v5 — easy confluence indicator for XAUUSD (any timeframe)
 //
 // BUY  = higher-timeframe trend UP
-//        + price dips into key areas: DEMAND zone (2 pts), SUPPORT (1 pt), FIBONACCI 0.5-0.786 (1 pt)
+//        + price dips into key areas: DEMAND zone (2 pts) and/or SUPPORT level (1 pt)
 //        + the candle CLOSES back above the area (bullish candle or long lower wick)
-// SELL = the mirror image (trend DOWN, SUPPLY / RESISTANCE / FIBONACCI, rejection down)
-// Points needed: Aggressive 1, Balanced 2, Strict 3. Stars on the label = points (max 4).
+// SELL = the mirror image (trend DOWN, SUPPLY / RESISTANCE, rejection down)
+// Points needed: Aggressive 1, Balanced 2, Strict 3. Stars on the label = points (max 3).
 //
 // Signals are decided on CLOSED candles only, so a printed signal does not disappear.
 // Shared rules with MT5: mt5/AurumCore.mqh. Demo research — not a guaranteed strategy.
 // =====================================================================
 
 // ---------- 1. Signals ----------
-string modeInput = input.string("Balanced", "Signal mode", options=["Balanced", "Strict", "Aggressive"], display=display.none, group="1. Signals", tooltip="Points: Supply/Demand zone = 2, Support/Resistance = 1, Fibonacci = 1.\nAggressive: 1 point (most signals).\nBalanced: 2 points (recommended).\nStrict: 3 points (fewest, strongest).\nAll modes trade only with the trend.")
-string swingInput = input.string("Normal", "Swing size", options=["Small", "Normal", "Large"], display=display.none, group="1. Signals", tooltip="How big a swing must be to make S/R levels and the Fibonacci.\nSmall = more levels (scalping). Large = only major levels (swing trading).")
+string modeInput = input.string("Balanced", "Signal mode", options=["Balanced", "Strict", "Aggressive"], display=display.none, group="1. Signals", tooltip="Points: Supply/Demand zone = 2, Support/Resistance = 1.\nAggressive: 1 point - any zone or S/R level (most signals).\nBalanced: 2 points - a supply/demand zone (recommended).\nStrict: 3 points - zone + S/R together (fewest, strongest).\nAll modes trade only with the trend.")
+string swingInput = input.string("Normal", "Swing size", options=["Small", "Normal", "Large"], display=display.none, group="1. Signals", tooltip="How big a swing must be to make an S/R level.\nSmall = more levels (scalping). Large = only major levels (swing trading).")
 string htfInput = input.timeframe("", "Trend timeframe (empty = auto)", display=display.none, group="1. Signals", tooltip="Auto: 1m→15m, 5m→1h, 15m-1h→4h, 2h-4h→1D, 1D→1W.")
 int cooldown = input.int(5, "Candles between same-side signals", minval=0, maxval=50, display=display.none, group="1. Signals")
 
 // ---------- 2. Show on chart ----------
 bool showSR = input.bool(true, "Support / Resistance (SNR)", display=display.none, group="2. Show on chart")
 bool showZones = input.bool(true, "Supply / Demand zones (SND)", display=display.none, group="2. Show on chart")
-bool showFib = input.bool(true, "Fibonacci of latest swing", display=display.none, group="2. Show on chart")
 bool showTrade = input.bool(true, "Entry / SL / TP of last signal", display=display.none, group="2. Show on chart")
 bool showEMA = input.bool(false, "EMA 50 / 200", display=display.none, group="2. Show on chart")
 bool showPanel = input.bool(true, "Info panel", display=display.none, group="2. Show on chart")
@@ -39,8 +38,6 @@ int atrLength = input.int(14, "ATR period", minval=2, maxval=200, display=displa
 // Fixed rule constants (same values as mt5/AurumCore.mqh)
 float TOUCH_ATR = 0.2      // how close counts as "touching" an area
 float MERGE_ATR = 0.3      // S/R levels closer than this are merged
-float FIB_NEAR = 0.5
-float FIB_FAR = 0.786
 
 int pivotLen = swingInput == "Small" ? 3 : swingInput == "Large" ? 10 : 5
 int tfSec = timeframe.in_seconds()
@@ -106,7 +103,7 @@ f_addZone(array<float> tops, array<float> bots, array<int> bars, float top, floa
     0
 
 f_price(float p) => na(p) ? "--" : str.tostring(p, format.mintick)
-f_stars(int n) => n >= 4 ? "★★★★" : n == 3 ? "★★★" : n == 2 ? "★★" : "★"
+f_stars(int n) => n >= 3 ? "★★★" : n == 2 ? "★★" : "★"
 
 // ---------- State (updated only on CLOSED candles) ----------
 var array<float> resP = array.new<float>()
@@ -119,10 +116,6 @@ var array<int> dBar = array.new<int>()
 var array<float> sTop = array.new<float>()
 var array<float> sBot = array.new<float>()
 var array<int> sBar = array.new<int>()
-var float swHigh = na
-var int swHighBar = na
-var float swLow = na
-var int swLowBar = na
 var int lastBuyBar = na
 var int lastSellBar = na
 var int sigDir = 0
@@ -137,10 +130,6 @@ var int sigState = 0          // 0 none, 1 active, 2 finished
 var string sigResult = ""
 var bool sigTP1Hit = false
 
-int swDir = na(swHighBar) or na(swLowBar) ? 0 : swHighBar > swLowBar ? 1 : -1
-bool swingOK = swDir != 0 and not na(swHigh) and not na(swLow) and swHigh > swLow
-float swSize = swingOK ? swHigh - swLow : na
-f_fib(float ratio) => swDir > 0 ? swHigh - ratio * swSize : swLow + ratio * swSize
 
 // ---------- 0) Follow the active trade: SL / TP hit or expired ----------
 if barstate.isconfirmed and sigState == 1 and bar_index > sigBar
@@ -194,23 +183,12 @@ if barstate.isconfirmed and ready
         if high >= p - tol and close < p
             atResistance := true
             resistanceHigh := na(resistanceHigh) ? p : math.max(resistanceHigh, p)
-    // Fibonacci golden zone 0.5 - 0.786
-    bool fibBuy = false
-    bool fibSell = false
-    float fibFar = na
-    if swingOK
-        float nearPrice = f_fib(FIB_NEAR)
-        fibFar := f_fib(FIB_FAR)
-        if swDir > 0
-            fibBuy := low <= nearPrice + tol and low >= fibFar - tol and close > fibFar
-        else
-            fibSell := high >= nearPrice - tol and high <= fibFar + tol and close < fibFar
 
     // Points: a supply/demand zone counts double
-    buyScore := (inDemand ? 2 : 0) + (atSupport ? 1 : 0) + (fibBuy ? 1 : 0)
-    sellScore := (inSupply ? 2 : 0) + (atResistance ? 1 : 0) + (fibSell ? 1 : 0)
-    buyWhy := str.trim((inDemand ? "Demand " : "") + (atSupport ? "Support " : "") + (fibBuy ? "Fib" : ""))
-    sellWhy := str.trim((inSupply ? "Supply " : "") + (atResistance ? "Resistance " : "") + (fibSell ? "Fib" : ""))
+    buyScore := (inDemand ? 2 : 0) + (atSupport ? 1 : 0)
+    sellScore := (inSupply ? 2 : 0) + (atResistance ? 1 : 0)
+    buyWhy := str.trim((inDemand ? "Demand " : "") + (atSupport ? "Support" : ""))
+    sellWhy := str.trim((inSupply ? "Supply " : "") + (atResistance ? "Resistance" : ""))
     areaText := buyScore > 0 and sellScore > 0 ? buyWhy + " / " + sellWhy : buyScore > 0 ? buyWhy + " (buy area)" : sellScore > 0 ? sellWhy + " (sell area)" : "No key area"
 
     int need = modeInput == "Strict" ? 3 : modeInput == "Aggressive" ? 1 : 2
@@ -223,44 +201,40 @@ if barstate.isconfirmed and ready
         float entry = close
         float sl = na
         float nearest = na
-        float fibExt = na
+        float nextArea = na
         if buySignal
             float structure = low
             structure := inDemand ? math.min(structure, demandLow) : structure
             structure := atSupport ? math.min(structure, supportLow) : structure
-            structure := fibBuy ? math.min(structure, fibFar) : structure
             sl := math.min(structure - slBufferATR * atrPrev, entry - minRiskATR * atrPrev)
             float risk = entry - sl
-            for p in resP
+            // Targets = the next resistance / supply areas above
+            array<float> targets = array.concat(array.copy(resP), array.copy(sBot))
+            for p in targets
                 if p >= entry + risk
                     nearest := na(nearest) ? p : math.min(nearest, p)
-            for p in sBot
-                if p >= entry + risk
-                    nearest := na(nearest) ? p : math.min(nearest, p)
-            if swingOK and swDir > 0 and swHigh >= entry + risk
-                nearest := na(nearest) ? swHigh : math.min(nearest, swHigh)
-            fibExt := swingOK and swDir > 0 ? swHigh + 0.618 * swSize : na
             sigTP1 := not na(nearest) ? nearest : entry + 1.5 * risk
-            sigTP2 := not na(fibExt) and fibExt > sigTP1 + 0.5 * risk ? fibExt : sigTP1 + risk
+            for p in targets
+                if p >= sigTP1 + 0.5 * risk
+                    nextArea := na(nextArea) ? p : math.min(nextArea, p)
+            sigTP2 := not na(nextArea) ? nextArea : sigTP1 + risk
             lastBuyBar := bar_index
         else
             float structure = high
             structure := inSupply ? math.max(structure, supplyHigh) : structure
             structure := atResistance ? math.max(structure, resistanceHigh) : structure
-            structure := fibSell ? math.max(structure, fibFar) : structure
             sl := math.max(structure + slBufferATR * atrPrev, entry + minRiskATR * atrPrev)
             float risk = sl - entry
-            for p in supP
+            // Targets = the next support / demand areas below
+            array<float> targets = array.concat(array.copy(supP), array.copy(dTop))
+            for p in targets
                 if p <= entry - risk
                     nearest := na(nearest) ? p : math.max(nearest, p)
-            for p in dTop
-                if p <= entry - risk
-                    nearest := na(nearest) ? p : math.max(nearest, p)
-            if swingOK and swDir < 0 and swLow <= entry - risk
-                nearest := na(nearest) ? swLow : math.max(nearest, swLow)
-            fibExt := swingOK and swDir < 0 ? swLow - 0.618 * swSize : na
             sigTP1 := not na(nearest) ? nearest : entry - 1.5 * risk
-            sigTP2 := not na(fibExt) and fibExt < sigTP1 - 0.5 * risk ? fibExt : sigTP1 - risk
+            for p in targets
+                if p <= sigTP1 - 0.5 * risk
+                    nextArea := na(nextArea) ? p : math.max(nextArea, p)
+            sigTP2 := not na(nextArea) ? nextArea : sigTP1 - risk
             lastSellBar := bar_index
         sigDir := buySignal ? 1 : -1
         sigBar := bar_index
@@ -330,21 +304,17 @@ if barstate.isconfirmed and ready
         bot := top - bot < 0.2 * atrPrev ? top - 0.2 * atrPrev : bot
         if top - bot <= 2.0 * atrPrev and bot > close
             f_addZone(sTop, sBot, sBar, top, bot, bar_index - 1, maxItems)
-    // New SNR levels from confirmed swing points (also feed the Fibonacci swing)
+    // New SNR levels from confirmed swing points
     if not na(ph)
         if close < ph
             f_addLevel(resP, resB, ph, bar_index - pivotLen, mergeTol, maxItems)
         else
             f_addLevel(supP, supB, ph, bar_index - pivotLen, mergeTol, maxItems)
-        swHigh := ph
-        swHighBar := bar_index - pivotLen
     if not na(pl)
         if close > pl
             f_addLevel(supP, supB, pl, bar_index - pivotLen, mergeTol, maxItems)
         else
             f_addLevel(resP, resB, pl, bar_index - pivotLen, mergeTol, maxItems)
-        swLow := pl
-        swLowBar := bar_index - pivotLen
 
 // ---------- Plots, data window and alerts ----------
 plot(showEMA ? ema50 : na, "EMA 50", color=color.orange, linewidth=1, display=display.pane)
@@ -362,7 +332,6 @@ var array<box> drawBoxes = array.new<box>()
 var array<label> drawLabels = array.new<label>()
 color DEMAND_COLOR = color.teal
 color SUPPLY_COLOR = color.red
-color FIB_COLOR = color.orange
 // Only areas near current price are drawn, so old far-away levels do not squash the chart.
 float nearRange = 8 * nz(atrNow, 0)
 f_near(float p) => math.abs(p - close) <= nearRange
@@ -397,17 +366,6 @@ if barstate.islast
             if f_near(p)
                 array.push(drawLines, line.new(array.get(resB, i), p, rightX, p, color=color.new(SUPPLY_COLOR, 20), width=1, style=line.style_dashed))
                 array.push(drawLabels, label.new(rightX, p, "R " + f_price(p), style=label.style_label_left, color=color.new(SUPPLY_COLOR, 30), textcolor=color.white, size=size.tiny))
-    if showFib and swingOK and f_near(f_fib(0.618))
-        int startX = swDir > 0 ? swLowBar : swHighBar
-        float zoneTop = math.max(f_fib(FIB_NEAR), f_fib(FIB_FAR))
-        float zoneBot = math.min(f_fib(FIB_NEAR), f_fib(FIB_FAR))
-        // One shaded golden zone with a single label instead of six overlapping labels
-        array.push(drawBoxes, box.new(startX, zoneTop, rightX, zoneBot, border_color=color.new(FIB_COLOR, 60), bgcolor=color.new(FIB_COLOR, 85), text="Fib 0.5-0.786", text_size=size.tiny, text_color=FIB_COLOR, text_halign=text.align_left, text_valign=text.align_top))
-        array.push(drawLines, line.new(startX, f_fib(0.618), rightX, f_fib(0.618), color=color.new(FIB_COLOR, 30), width=1, style=line.style_dotted))
-        float ext = swDir > 0 ? swHigh + 0.618 * swSize : swLow - 0.618 * swSize
-        if f_near(ext)
-            array.push(drawLines, line.new(startX, ext, rightX, ext, color=FIB_COLOR, width=1, style=line.style_dashed))
-            array.push(drawLabels, label.new(startX, ext, "Fib 1.618 target " + f_price(ext), style=label.style_label_right, color=color.new(color.black, 100), textcolor=FIB_COLOR, size=size.tiny))
     // Trade lines only while the trade is still active (not SL / TP2 / expired)
     if showTrade and sigState == 1 and not na(sigBar)
         array<float> values = array.from(sigEntry, sigSL, sigTP1, sigTP2)
@@ -434,7 +392,7 @@ if barstate.islast and showPanel
     string lastText = sigDir == 0 ? "None yet" : (sigDir > 0 ? "BUY " : "SELL ") + f_stars(sigScore) + "  " + str.tostring(bar_index - sigBar) + " bars ago - " + (sigState == 1 ? "ACTIVE" : sigResult)
     bool active = sigState == 1
     color lastColor = sigDir > 0 ? color.teal : sigDir < 0 ? color.red : chart.fg_color
-    string nextText = trendDir > 0 ? "Wait: dip into Demand / Support / Fib + bullish close" : trendDir < 0 ? "Wait: rally into Supply / Resistance / Fib + bearish close" : "Trend flat: no signals until it turns"
+    string nextText = trendDir > 0 ? "Wait: dip into Demand / Support + bullish close" : trendDir < 0 ? "Wait: rally into Supply / Resistance + bearish close" : "Trend flat: no signals until it turns"
     table.cell(panel, 0, 0, "AURUM GOLD v5", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
     table.cell(panel, 1, 0, timeframe.period + " chart | trend TF " + htf, text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
     f_row(1, "Trend", trendText, trendColor)

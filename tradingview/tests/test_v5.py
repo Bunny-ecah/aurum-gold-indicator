@@ -80,8 +80,8 @@ class PineContract(unittest.TestCase):
 
     def test_modes_and_points_match_core(self):
         self.assertIn('modeInput == "Strict" ? 3 : modeInput == "Aggressive" ? 1 : 2', PINE)
-        self.assertIn("(inDemand ? 2 : 0) + (atSupport ? 1 : 0) + (fibBuy ? 1 : 0)", PINE)
-        self.assertIn("(zone?2:0)+(level?1:0)+(fib?1:0)", CORE)
+        self.assertIn("(inDemand ? 2 : 0) + (atSupport ? 1 : 0)\n", PINE)
+        self.assertIn("(zone?2:0)+(level?1:0);", CORE)
         self.assertIn("mode==AURUM_STRICT?3:mode==AURUM_AGGRESSIVE?1:2", CORE)
         self.assertEqual(POINTS_NEEDED, {"Aggressive": 1, "Balanced": 2, "Strict": 3})
 
@@ -89,10 +89,10 @@ class PineContract(unittest.TestCase):
         for pine, core in (("TOUCH_ATR = 0.2", "TOUCH_ATR 0.2"), ("MERGE_ATR = 0.3", "MERGE_ATR 0.3")):
             self.assertIn(pine, PINE)
             self.assertIn(core, MQ5)
-        self.assertIn("FIB_NEAR = 0.5", PINE)
-        self.assertIn("FIB_FAR = 0.786", PINE)
-        self.assertIn("#define AURUM_FIB_NEAR 0.5", CORE)
-        self.assertIn("#define AURUM_FIB_FAR  0.786", CORE)
+
+    def test_no_fibonacci_left(self):
+        for source in (PINE, CORE, MQ5):
+            self.assertNotIn("fib", source.lower())
         for name, value in (("impulseATR", "1.5"), ("slBufferATR", "0.2"), ("minRiskATR", "0.5"), ("maxItems", "4")):
             self.assertRegex(PINE, rf"{name} = input\.(float|int)\({re.escape(value)},")
         for name, value in (("ImpulseATR", "1.5"), ("SLBufferATR", "0.2"), ("MinRiskATR", "0.5"), ("MaxItems", "4")):

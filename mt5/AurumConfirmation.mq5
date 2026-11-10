@@ -1,6 +1,6 @@
 #property copyright "Aurum Gold - demo research"
 #property version   "3.00"
-#property description "XAUUSD SNR + SND + Fibonacci confluence signals on closed candles. No order execution."
+#property description "XAUUSD SNR + SND (support/resistance + supply/demand) signals on closed candles. No order execution."
 #property indicator_chart_window
 #property indicator_buffers 2
 #property indicator_plots   2
@@ -14,15 +14,15 @@
 #property indicator_width2  2
 #include "AurumCore.mqh"
 
-// BUY  = trend UP + price dips into DEMAND (2 pts) / SUPPORT (1 pt) / FIBONACCI 0.5-0.786 (1 pt)
+// BUY  = trend UP + price dips into DEMAND (2 pts) and/or SUPPORT (1 pt)
 //        + the candle closes back above it. SELL = the mirror image.
 // Points needed: Aggressive 1, Balanced 2, Strict 3. Stars (*) = points. Same rules as TradingView v5.
 
 enum AurumSignalMode
 {
-   SIGNALS_BALANCED=0,   // Balanced: 2 points (recommended)
-   SIGNALS_STRICT=1,     // Strict: 3 points (fewest, strongest)
-   SIGNALS_AGGRESSIVE=2  // Aggressive: 1 point (most signals)
+   SIGNALS_BALANCED=0,   // Balanced: supply/demand zone (recommended)
+   SIGNALS_STRICT=1,     // Strict: zone + S/R together (fewest)
+   SIGNALS_AGGRESSIVE=2  // Aggressive: any zone or S/R level (most)
 };
 
 enum AurumSwingSize
@@ -34,13 +34,12 @@ enum AurumSwingSize
 
 input group "1. Signals"
 input AurumSignalMode SignalMode=SIGNALS_BALANCED;      // Signal mode
-input AurumSwingSize  SwingSize=SWING_NORMAL;           // Swing size for S/R and Fibonacci
+input AurumSwingSize  SwingSize=SWING_NORMAL;           // Swing size for S/R levels
 input ENUM_TIMEFRAMES TrendTimeframe=PERIOD_CURRENT;    // Trend timeframe (current = auto)
 input int    CooldownBars=5;                            // Candles between same-side signals
 input group "2. Show on chart"
 input bool   ShowSR=true;                               // Support / Resistance (SNR)
 input bool   ShowZones=true;                            // Supply / Demand zones (SND)
-input bool   ShowFib=true;                              // Fibonacci of latest swing
 input bool   ShowTrade=true;                            // Entry / SL / TP of last signal
 input bool   ShowPanel=true;                            // Info panel
 input group "3. Alerts"
@@ -78,8 +77,6 @@ string delivery="No new signal yet";
 // Areas (rebuilt by replaying closed candles)
 double resP[],supP[],dTop[],dBot[],sTop[],sBot[];
 datetime resT[],supT[],dTime[],sTime[];
-double swHigh=0,swLow=0;
-datetime swHighT=0,swLowT=0;
 
 // Last signal
 int sigDir=0,sigScore=0,sigState=0,sigK=0;   // sigState: 0 none, 1 active, 2 finished
@@ -102,7 +99,7 @@ ENUM_TIMEFRAMES AutoTrendTF()
    return PERIOD_MN1;
 }
 
-string Stars(const int n) { return n>=4?"****":n==3?"***":n==2?"**":"*"; }
+string Stars(const int n) { return n>=3?"***":n==2?"**":"*"; }
 string Price(const double p) { return p>0?DoubleToString(p,_Digits):"--"; }
 
 // ---------- Area bookkeeping ----------
@@ -130,7 +127,6 @@ void ResetState()
 {
    ArrayFree(resP); ArrayFree(supP); ArrayFree(dTop); ArrayFree(dBot); ArrayFree(sTop); ArrayFree(sBot);
    ArrayFree(resT); ArrayFree(supT); ArrayFree(dTime); ArrayFree(sTime);
-   swHigh=0; swLow=0; swHighT=0; swLowT=0;
    sigDir=0; sigScore=0; sigTime=0; sigEntry=0; sigSL=0; sigTP1=0; sigTP2=0; sigWhy=""; areaText="--";
    sigState=0; sigK=0; sigTP1Hit=false; sigResult="";
 }
@@ -216,22 +212,6 @@ void DrawAreas(const datetime lastTime)
          Text(prefix+"drlt"+IntegerToString(i),rightT,resP[i],"R "+Price(resP[i]),clrTomato,ANCHOR_LEFT);
       }
    }
-   AurumSwing sw; sw.high=swHigh; sw.low=swLow;
-   sw.dir=(swHighT==0 || swLowT==0)?0:(swHighT>swLowT?1:-1);
-   if(ShowFib && AurumSwingValid(sw) && Near(AurumFibPrice(sw,0.618)))
-   {
-      // One golden-zone box with a single label instead of six overlapping labels
-      datetime startT=sw.dir>0?swLowT:swHighT;
-      double nearP=AurumFibPrice(sw,AURUM_FIB_NEAR),farP=AurumFibPrice(sw,AURUM_FIB_FAR);
-      Zone(prefix+"dfz",startT,rightT,MathMax(nearP,farP),MathMin(nearP,farP),C'70,50,10',clrOrange,"Fib 0.5-0.786");
-      Line(prefix+"dfm",startT,rightT,AurumFibPrice(sw,0.618),clrOrange,STYLE_DOT,1,false);
-      double ext=AurumFibExtension(sw,1.618);
-      if(Near(ext))
-      {
-         Line(prefix+"dfe",startT,rightT,ext,clrOrange,STYLE_DASH,1,false);
-         Text(prefix+"dfet",startT,ext,"Fib 1.618 target  "+Price(ext),clrOrange,ANCHOR_RIGHT);
-      }
-   }
    // Trade lines only while the trade is still active (not SL / TP2 / expired)
    if(ShowTrade && sigDir!=0 && sigState==1)
    {
@@ -260,8 +240,8 @@ void RenderPanel()
       int ago=iBarShift(_Symbol,_Period,sigTime,false);
       last=(sigDir>0?"BUY ":"SELL ")+Stars(sigScore)+" "+sigWhy+" - "+IntegerToString(ago)+" bars ago - "+(sigState==1?"ACTIVE":sigResult);
    }
-   string next=trendNow>0?"Wait: dip into Demand/Support/Fib + bullish close":
-      trendNow<0?"Wait: rally into Supply/Resistance/Fib + bearish close":
+   string next=trendNow>0?"Wait: dip into Demand/Support + bullish close":
+      trendNow<0?"Wait: rally into Supply/Resistance + bearish close":
       "Trend flat: no signals until it turns";
    string rows[11];
    rows[0]="AURUM GOLD v3 | "+_Symbol+" "+EnumToString(_Period)+" | trend "+EnumToString(trendTF);
@@ -490,15 +470,10 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       for(int z=0;z<ArraySize(resP);z++)
          if(AurumResistanceTouch(c,resP[z],tol))
          { resistanceHigh=atResistance?MathMax(resistanceHigh,resP[z]):resP[z]; atResistance=true; }
-      AurumSwing sw; sw.high=swHigh; sw.low=swLow;
-      sw.dir=(swHighT==0 || swLowT==0)?0:(swHighT>swLowT?1:-1);
-      bool fibBuy=AurumFibBuy(c,sw,tol);
-      bool fibSell=AurumFibSell(c,sw,tol);
-      double fibFar=AurumSwingValid(sw)?AurumFibPrice(sw,AURUM_FIB_FAR):0;
-      int buyScore=AurumScore(inDemand,atSupport,fibBuy);
-      int sellScore=AurumScore(inSupply,atResistance,fibSell);
-      string buyWhy=(inDemand?"Demand ":"")+(atSupport?"Support ":"")+(fibBuy?"Fib":"");
-      string sellWhy=(inSupply?"Supply ":"")+(atResistance?"Resistance ":"")+(fibSell?"Fib":"");
+      int buyScore=AurumScore(inDemand,atSupport);
+      int sellScore=AurumScore(inSupply,atResistance);
+      string buyWhy=(inDemand?"Demand ":"")+(atSupport?"Support":"");
+      string sellWhy=(inSupply?"Supply ":"")+(atResistance?"Resistance":"");
       StringTrimRight(buyWhy); StringTrimRight(sellWhy);
       if(i==1)
          areaText=buyScore>0 && sellScore>0?buyWhy+" / "+sellWhy:
@@ -509,20 +484,23 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       if(dir<0 && !AurumCooldownOK(k,lastSellK,CooldownBars)) dir=0;
       if(dir!=0)
       {
-         double entry=c.close,stop=0,nearest=0,fibTarget=0,tp1=0,tp2=0;
+         double entry=c.close,stop=0,nearest=0,nextArea=0,tp1=0,tp2=0;
          if(dir>0)
          {
             double structure=c.low;
             if(inDemand) structure=MathMin(structure,demandLow);
             if(atSupport) structure=MathMin(structure,supportLow);
-            if(fibBuy) structure=MathMin(structure,fibFar);
             stop=AurumBuyStop(entry,structure,c.atr,SLBufferATR,MinRiskATR);
             double risk=entry-stop;
-            for(int z=0;z<ArraySize(resP);z++) if(resP[z]>=entry+risk && (nearest==0 || resP[z]<nearest)) nearest=resP[z];
-            for(int z=0;z<ArraySize(sBot);z++) if(sBot[z]>=entry+risk && (nearest==0 || sBot[z]<nearest)) nearest=sBot[z];
-            if(AurumSwingValid(sw) && sw.dir>0 && swHigh>=entry+risk && (nearest==0 || swHigh<nearest)) nearest=swHigh;
-            fibTarget=AurumSwingValid(sw) && sw.dir>0?AurumFibExtension(sw,1.618):0;
-            AurumBuyTargets(entry,stop,nearest,fibTarget,tp1,tp2);
+            // Targets = the next resistance / supply areas above
+            double above[]; int n=0;
+            ArrayResize(above,ArraySize(resP)+ArraySize(sBot));
+            for(int z=0;z<ArraySize(resP);z++) above[n++]=resP[z];
+            for(int z=0;z<ArraySize(sBot);z++) above[n++]=sBot[z];
+            for(int z=0;z<n;z++) if(above[z]>=entry+risk && (nearest==0 || above[z]<nearest)) nearest=above[z];
+            tp1=AurumBuyTP1(entry,stop,nearest);
+            for(int z=0;z<n;z++) if(above[z]>=tp1+0.5*risk && (nextArea==0 || above[z]<nextArea)) nextArea=above[z];
+            tp2=AurumBuyTP2(entry,stop,tp1,nextArea);
             Buy[i]=c.low-0.3*c.atr; lastBuyK=k;
          }
          else
@@ -530,14 +508,17 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             double structure=c.high;
             if(inSupply) structure=MathMax(structure,supplyHigh);
             if(atResistance) structure=MathMax(structure,resistanceHigh);
-            if(fibSell) structure=MathMax(structure,fibFar);
             stop=AurumSellStop(entry,structure,c.atr,SLBufferATR,MinRiskATR);
             double risk=stop-entry;
-            for(int z=0;z<ArraySize(supP);z++) if(supP[z]<=entry-risk && supP[z]>nearest) nearest=supP[z];
-            for(int z=0;z<ArraySize(dTop);z++) if(dTop[z]<=entry-risk && dTop[z]>nearest) nearest=dTop[z];
-            if(AurumSwingValid(sw) && sw.dir<0 && swLow<=entry-risk && swLow>nearest) nearest=swLow;
-            fibTarget=AurumSwingValid(sw) && sw.dir<0?AurumFibExtension(sw,1.618):0;
-            AurumSellTargets(entry,stop,nearest,fibTarget,tp1,tp2);
+            // Targets = the next support / demand areas below
+            double below[]; int n=0;
+            ArrayResize(below,ArraySize(supP)+ArraySize(dTop));
+            for(int z=0;z<ArraySize(supP);z++) below[n++]=supP[z];
+            for(int z=0;z<ArraySize(dTop);z++) below[n++]=dTop[z];
+            for(int z=0;z<n;z++) if(below[z]<=entry-risk && below[z]>nearest) nearest=below[z];
+            tp1=AurumSellTP1(entry,stop,nearest);
+            for(int z=0;z<n;z++) if(below[z]<=tp1-0.5*risk && below[z]>nextArea) nextArea=below[z];
+            tp2=AurumSellTP2(entry,stop,tp1,nextArea);
             Sell[i]=c.high+0.3*c.atr; lastSellK=k;
          }
          sigDir=dir; sigScore=dir>0?buyScore:sellScore; sigWhy=dir>0?buyWhy:sellWhy;
@@ -590,13 +571,11 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       {
          if(c.close<high[pk]) PushLevel(resP,resT,high[pk],time[pk],mergeTol);
          else PushLevel(supP,supT,high[pk],time[pk],mergeTol);
-         swHigh=high[pk]; swHighT=time[pk];
       }
       if(PivotLow(low,pk,L))
       {
          if(c.close>low[pk]) PushLevel(supP,supT,low[pk],time[pk],mergeTol);
          else PushLevel(resP,resT,low[pk],time[pk],mergeTol);
-         swLow=low[pk]; swLowT=time[pk];
       }
    }
 

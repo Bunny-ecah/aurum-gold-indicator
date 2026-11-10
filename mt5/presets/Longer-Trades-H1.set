@@ -5,7 +5,6 @@ TrendTimeframe=0
 CooldownBars=5
 ShowSR=true
 ShowZones=true
-ShowFib=true
 ShowTrade=true
 ShowPanel=true
 PopupAlerts=true

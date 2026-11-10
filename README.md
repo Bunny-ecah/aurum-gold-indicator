@@ -6,8 +6,8 @@
 
 | Platform | Current source | Status |
 | --- | --- | --- |
-| MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v3 (SNR + SND + Fibonacci); core tests pass; MetaEditor compile and demo testing outstanding |
-| TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v5 (SNR + SND + Fibonacci, replaces v4); model/contract tests pass; Pine Editor compile and demo testing outstanding |
+| MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v3 (SNR + SND); core tests pass; MetaEditor compile and demo testing outstanding |
+| TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v5 (SNR + SND, replaces v4); model/contract tests pass; Pine Editor compile and demo testing outstanding |
 
 Earlier TradingView sources are retained for comparison: basic indicator, multi-timeframe v2 and entry-planner v3. Install only the version you intend to use, rather than all of them on one chart.
 
@@ -15,9 +15,8 @@ Earlier TradingView sources are retained for comparison: basic indicator, multi-
 
 - **SNR:** support and resistance from confirmed swing points, merged when close together, flipped when broken.
 - **SND:** supply and demand zones from strong impulse candles, removed when price closes through them.
-- **Fibonacci:** latest swing with the 0.5–0.786 golden zone and a 1.618 extension target.
-- **Signals:** higher-timeframe trend + confluence points (zone 2, S/R 1, Fib 1) + rejection candle. Modes: Aggressive / Balanced / Strict.
-- **Trade levels:** Entry, Stop loss, TP1 (next opposite area) and TP2 (Fib 1.618) for every signal, plus a simple info panel and alerts.
+- **Signals:** higher-timeframe trend + confluence points (zone 2, S/R 1) + rejection candle. Modes: Aggressive / Balanced / Strict.
+- **Trade levels:** Entry, Stop loss, TP1 (next opposite area) and TP2 (the area after it) for every signal, plus a simple info panel and alerts.
 - Any timeframe, few settings, closed-candle signals that do not repaint.
 
 How it works and how to read the chart: [`tradingview/V5-GUIDE.md`](tradingview/V5-GUIDE.md).
@@ -51,7 +50,7 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_v5.py
 ```
 
-This runs 15 source-contract and reference-model tests (`tradingview/tests/model_v5.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+This runs 16 source-contract and reference-model tests (`tradingview/tests/model_v5.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 
@@ -59,12 +58,12 @@ For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual St
 mt5\tests\run-tests.cmd
 ```
 
-On Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN mt5/tests/core_tests.cpp -o core_tests && ./core_tests`. The harness compiles the shared `AurumCore.mqh` as C++; the recorded run passed 79 checks. This does not test MT5 event integration or a strategy's performance.
+On Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN mt5/tests/core_tests.cpp -o core_tests && ./core_tests`. The harness compiles the shared `AurumCore.mqh` as C++; the recorded run passed 71 checks. This does not test MT5 event integration or a strategy's performance.
 
 ## Remaining work
 
 - Compile v5 in TradingView Pine Editor and v3 in MetaEditor; fix any compiler diagnostics.
-- Check zones, S/R, Fibonacci and signals visually with Bar Replay and a live demo feed in all three modes.
+- Check zones, S/R and signals visually with Bar Replay and a live demo feed in all three modes.
 - Compare TradingView and MT5 signals on the same candles (feeds differ, so small differences are expected).
 - Verify alerts and phone push end-to-end.
 - Evaluate costs, slippage, expectancy and drawdown with recorded demo trades; no performance claim exists.

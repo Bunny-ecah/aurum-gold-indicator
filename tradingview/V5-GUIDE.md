@@ -1,4 +1,4 @@
-# Aurum Gold v5 — quick guide (SNR + SND + Fibonacci)
+# Aurum Gold v5 — quick guide (SNR + SND)
 
 Source: `AurumSignalAudit.pine` (v5 replaces v4). MT5 v3 uses the same rules (`mt5/AurumCore.mqh`).
 
@@ -19,8 +19,6 @@ You do not need to change any setting to start.
 | Red box **Supply** | Area where sellers pushed price down strongly (SND). |
 | Green dashed **S** line | Support from a swing low (SNR). |
 | Red dashed **R** line | Resistance from a swing high (SNR). |
-| Orange dotted lines + shaded band | Fibonacci of the latest swing. The band is the **0.5 – 0.786 golden zone**. |
-| Orange dashed **Fib 1.618 target** | Extension used for TP2. |
 | **BUY ★★ / SELL ★★** label | Signal. Stars = confluence points. Text shows which areas agreed. |
 | Blue / red / green lines | Entry, stop loss, TP1, TP2 of the latest signal. |
 | Panel | Trend, mode, where price is now, last signal and its levels, what to wait for. |
@@ -34,16 +32,15 @@ A **BUY** needs all three:
 2. **Enough confluence points** from areas the candle touched:
    - Demand zone = **2 points**
    - Support level = **1 point**
-   - Fibonacci 0.5–0.786 pullback of an up-swing = **1 point**
 3. **Rejection candle** — it closes back above the area, and is bullish or has a long lower wick.
 
-**SELL** is the mirror: trend DOWN, supply (2) / resistance (1) / Fibonacci (1), close back below the area.
+**SELL** is the mirror: trend DOWN, supply (2) / resistance (1), close back below the area.
 
 | Signal mode | Points needed | Use it when |
 | --- | --- | --- |
-| Aggressive | 1 | You want more signals and will filter by eye. |
-| **Balanced** (default) | 2 | Recommended. A zone alone, or S/R + Fibonacci. |
-| Strict | 3 | Fewest, strongest setups (zone + S/R or zone + Fib). |
+| Aggressive | 1 | Any zone or S/R level. More signals; filter by eye. |
+| **Balanced** (default) | 2 | Recommended. Price must be in a supply/demand zone. |
+| Strict | 3 | Fewest, strongest: zone and S/R level together. |
 
 All modes trade only **with** the trend. When the trend is flat there are no signals.
 After a signal, the same side waits 5 candles (setting) to avoid repeated labels.
@@ -52,13 +49,12 @@ After a signal, the same side waits 5 candles (setting) to avoid repeated labels
 
 - **Support / Resistance (SNR):** swing highs/lows confirmed after N candles on each side (Swing size: Small 3, Normal 5, Large 10). When price closes through a level it flips (old resistance becomes support). Levels within 0.3 ATR are merged.
 - **Supply / Demand (SND):** a candle whose body is at least 1.5 × ATR and closes beyond the previous candle's high/low. The previous candle is the base; the zone runs from the base body to the extreme wick. A zone is removed when a candle closes through it.
-- **Fibonacci:** drawn on the latest confirmed swing (low→high = up-swing, high→low = down-swing).
 
 ### Stop loss and targets
 
-- **Stop loss:** beyond the touched zone / level / Fib 0.786 (and the candle wick), plus 0.2 ATR. At least 0.5 ATR from entry.
-- **TP1:** the nearest opposite area (resistance, supply, swing high) that is at least 1R away; otherwise 1.5R.
-- **TP2:** the Fibonacci 1.618 extension if it is beyond TP1; otherwise TP1 + 1R.
+- **Stop loss:** beyond the touched zone / level (and the candle wick), plus 0.2 ATR. At least 0.5 ATR from entry.
+- **TP1:** the nearest opposite area (resistance or supply for a BUY) that is at least 1R away; otherwise 1.5R.
+- **TP2:** the next opposite area at least 0.5R beyond TP1; otherwise TP1 + 1R.
 - **Entry:** the signal candle's close. Your broker fill and spread will differ.
 
 ## Alerts

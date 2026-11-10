@@ -1,11 +1,11 @@
 # v3.00
 
-- New signal logic shared with TradingView v5: higher-timeframe trend + Supply/Demand zones (2 points), Support/Resistance (1 point) and Fibonacci 0.5-0.786 pullbacks (1 point) + a rejection candle.
+- New signal logic shared with TradingView v5: higher-timeframe trend + Supply/Demand zones (2 points) and Support/Resistance (1 point) + a rejection candle.
 - Signal modes: Aggressive (1 point), Balanced (2, default), Strict (3). Replaces the strict 4/4 EMA/RSI/breakout checklist that skipped many moves.
-- Draws zones, S/R lines (with role flip), latest-swing Fibonacci with 1.618 target, and Entry/SL/TP1/TP2 of the latest signal.
+- Draws zones, S/R lines (with role flip) and Entry/SL/TP1/TP2 of the latest signal.
 - Works on any timeframe with an automatic trend timeframe; removed the mode/timeframe lock.
 - Simpler inputs and panel. Removed the CSV journal.
-- New C++ core tests (79 checks). Not yet compiled in MetaEditor.
+- New C++ core tests (71 checks). Not yet compiled in MetaEditor.
 
 # v2.00
 

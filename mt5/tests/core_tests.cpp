@@ -1,6 +1,6 @@
 #include "../AurumCore.mqh"
 
-// Tests for the shared v3 decision core (SNR + SND + Fibonacci).
+// Tests for the shared v3 decision core (SNR + SND).
 // Windows: run-tests.cmd builds a freestanding DLL and runs it from Python.
 // Linux/macOS: g++ -std=c++17 -DAURUM_TEST_MAIN tests/core_tests.cpp -o core_tests && ./core_tests
 #ifdef _MSC_VER
@@ -31,11 +31,6 @@ AurumCandle C(double o,double h,double l,double c,double atr=4)
 {
    AurumCandle x; x.open=o; x.high=h; x.low=l; x.close=c; x.atr=atr; return x;
 }
-AurumSwing S(double high,double low,int dir)
-{
-   AurumSwing s; s.high=high; s.low=low; s.dir=dir; return s;
-}
-
 AURUM_EXPORT int RunTests()
 {
    checks=0; failures=0;
@@ -95,29 +90,14 @@ AURUM_EXPORT int RunTests()
    Check(!AurumResistanceTouch(C(2648,2650.2,2647,2650.1),2650,0.8),"close above resistance is a breakout");
    Check(AurumSameLevel(2650,2650.3,0.4) && !AurumSameLevel(2650,2650.5,0.4),"level merge tolerance");
 
-   // --- Fibonacci
-   AurumSwing up=S(2700,2600,1), down=S(2700,2600,-1);
-   Check(Near(AurumFibPrice(up,0.5),2650) && Near(AurumFibPrice(up,0.786),2621.4),"up-swing retracements");
-   Check(Near(AurumFibPrice(down,0.5),2650) && Near(AurumFibPrice(down,0.786),2678.6),"down-swing retracements");
-   Check(Near(AurumFibPrice(up,0),2700) && Near(AurumFibPrice(up,1),2600),"0 = swing end, 1 = swing start");
-   Check(Near(AurumFibExtension(up,1.618),2761.8),"up-swing 1.618 extension");
-   Check(Near(AurumFibExtension(down,1.618),2538.2),"down-swing 1.618 extension");
-   Check(AurumFibBuy(C(2648,2652,2640,2649),up,0.8),"BUY pullback inside golden zone");
-   Check(!AurumFibBuy(C(2658,2662,2655,2660),up,0.8),"shallow pullback is not golden zone");
-   Check(!AurumFibBuy(C(2620,2625,2610,2622),up,0.8),"too deep: below 0.786");
-   Check(!AurumFibBuy(C(2648,2652,2640,2649),down,0.8),"no BUY fib in a down-swing");
-   Check(AurumFibSell(C(2652,2660,2648,2651),down,0.8),"SELL pullback inside golden zone");
-   Check(!AurumFibSell(C(2652,2660,2648,2651),up,0.8),"no SELL fib in an up-swing");
-   Check(!AurumFibBuy(C(2648,2652,2640,2649),S(2600,2700,1),0.8),"invalid swing ignored");
-
    // --- Decision
-   Check(AurumScore(true,false,false)==2 && AurumScore(false,true,true)==2,"zone counts double");
-   Check(AurumScore(true,true,true)==4 && AurumScore(false,false,false)==0,"score range 0-4");
+   Check(AurumScore(true,false)==2 && AurumScore(false,true)==1,"zone counts double");
+   Check(AurumScore(true,true)==3 && AurumScore(false,false)==0,"score range 0-3");
    Check(AurumPointsNeeded(AURUM_AGGRESSIVE)==1 && AurumPointsNeeded(AURUM_BALANCED)==2 && AurumPointsNeeded(AURUM_STRICT)==3,"points per mode");
    Check(AurumDecide(AURUM_BALANCED,1,true,2,false,0)==1,"balanced BUY: trend + zone");
    Check(AurumDecide(AURUM_BALANCED,1,true,1,false,0)==0,"balanced needs 2 points");
-   Check(AurumDecide(AURUM_BALANCED,-1,true,4,false,0)==0,"BUY blocked against trend");
-   Check(AurumDecide(AURUM_BALANCED,0,true,4,false,0)==0,"BUY blocked with unknown trend");
+   Check(AurumDecide(AURUM_BALANCED,-1,true,3,false,0)==0,"BUY blocked against trend");
+   Check(AurumDecide(AURUM_BALANCED,0,true,3,false,0)==0,"BUY blocked with unknown trend");
    Check(AurumDecide(AURUM_BALANCED,1,false,4,false,0)==0,"no rejection candle = no signal");
    Check(AurumDecide(AURUM_BALANCED,-1,false,0,true,2)==-1,"balanced SELL");
    Check(AurumDecide(AURUM_STRICT,1,true,2,false,0)==0,"strict needs 3 points");
@@ -136,19 +116,16 @@ AURUM_EXPORT int RunTests()
    Check(Near(sl,2653.8),"SELL stop above structure + buffer");
    sl=AurumSellStop(2650,2650.1,4,0.2,0.5);
    Check(Near(sl,2652),"SELL stop respects minimum risk");
-   double tp1=0,tp2=0;
-   AurumBuyTargets(2650,2645,2660,2680,tp1,tp2);
-   Check(Near(tp1,2660) && Near(tp2,2680),"BUY TP1 = resistance, TP2 = fib 1.618");
-   AurumBuyTargets(2650,2645,0,0,tp1,tp2);
-   Check(Near(tp1,2657.5) && Near(tp2,2662.5),"BUY fallback 1.5R / 2.5R");
-   AurumBuyTargets(2650,2645,2660,2661,tp1,tp2);
-   Check(Near(tp1,2660) && Near(tp2,2665),"BUY fib too close to TP1 -> TP1 + 1R");
-   AurumSellTargets(2650,2655,2640,2620,tp1,tp2);
-   Check(Near(tp1,2640) && Near(tp2,2620),"SELL TP1 = support, TP2 = fib 1.618");
-   AurumSellTargets(2650,2655,0,0,tp1,tp2);
-   Check(Near(tp1,2642.5) && Near(tp2,2637.5),"SELL fallback 1.5R / 2.5R");
-   AurumSellTargets(2650,2655,2647,0,tp1,tp2);
-   Check(Near(tp1,2642.5),"SELL target closer than 1R ignored");
+   Check(Near(AurumBuyTP1(2650,2645,2660),2660),"BUY TP1 = nearest resistance/supply");
+   Check(Near(AurumBuyTP1(2650,2645,0),2657.5),"BUY TP1 fallback 1.5R");
+   Check(Near(AurumBuyTP2(2650,2645,2660,2670),2670),"BUY TP2 = next area");
+   Check(Near(AurumBuyTP2(2650,2645,2660,2661),2665),"BUY TP2 area too close -> TP1 + 1R");
+   Check(Near(AurumBuyTP2(2650,2645,2660,0),2665),"BUY TP2 fallback TP1 + 1R");
+   Check(Near(AurumSellTP1(2650,2655,2640),2640),"SELL TP1 = nearest support/demand");
+   Check(Near(AurumSellTP1(2650,2655,0),2642.5),"SELL TP1 fallback 1.5R");
+   Check(Near(AurumSellTP1(2650,2655,2647),2642.5),"SELL area closer than 1R ignored");
+   Check(Near(AurumSellTP2(2650,2655,2640,2630),2630),"SELL TP2 = next area");
+   Check(Near(AurumSellTP2(2650,2655,2640,0),2635),"SELL TP2 fallback TP1 - 1R");
 
    // --- Higher timeframe
    Check(AurumTrendDir(2650,2600)==1 && AurumTrendDir(2550,2600)==-1 && AurumTrendDir(2600,2600)==0,"trend direction");

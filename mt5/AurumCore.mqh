@@ -1,30 +1,19 @@
-// Aurum v3 shared decision rules: SNR + SND + Fibonacci.
+// Aurum v3 shared decision rules: SNR (support/resistance) + SND (supply/demand).
 // Platform-independent: compiled by MT5 (MQL5) and by tests/core_tests.cpp (C++).
 // The TradingView v5 script implements the same rules; keep both in sync.
 #ifndef AURUM_CORE_MQH
 #define AURUM_CORE_MQH
 
-// Signal modes. Confluence points: Supply/Demand zone = 2, S/R level = 1, Fibonacci = 1.
+// Signal modes. Confluence points: Supply/Demand zone = 2, Support/Resistance level = 1.
 // Every mode trades WITH the higher-timeframe trend only.
-#define AURUM_BALANCED   0   // needs 2 points: a zone, or S/R + Fibonacci
-#define AURUM_STRICT     1   // needs 3 points: zone + S/R or zone + Fibonacci
-#define AURUM_AGGRESSIVE 2   // needs 1 point: any single area
-
-// Fibonacci pullback ("golden") zone used for entries
-#define AURUM_FIB_NEAR 0.5
-#define AURUM_FIB_FAR  0.786
+#define AURUM_BALANCED   0   // needs 2 points: a supply/demand zone
+#define AURUM_STRICT     1   // needs 3 points: zone + S/R level together
+#define AURUM_AGGRESSIVE 2   // needs 1 point: any zone or S/R level
 
 struct AurumCandle
 {
    double open,high,low,close;
    double atr;   // ATR of the PREVIOUS closed candle (the signal candle cannot inflate it)
-};
-
-struct AurumSwing
-{
-   double high,low;
-   int dir;      // 1 = up-swing (low then high): look for BUY pullbacks
-                 // -1 = down-swing (high then low): look for SELL pullbacks; 0 = none
 };
 
 bool AurumNumber(const double x)
@@ -123,50 +112,11 @@ bool AurumSameLevel(const double a,const double b,const double tol)
    return AurumAbs(a-b)<=tol;
 }
 
-// ---------- Fibonacci ----------
-// Retracement price for a ratio of the latest swing (0 = swing end, 1 = swing start).
-// Ratios above 1 are not used; extensions use AurumFibExtension.
-double AurumFibPrice(const AurumSwing &s,const double ratio)
-{
-   double size=s.high-s.low;
-   return s.dir>0?s.high-ratio*size:s.low+ratio*size;
-}
-
-// Target beyond the swing end: 1.618 extension -> ratio 0.618 beyond the swing end.
-double AurumFibExtension(const AurumSwing &s,const double extension)
-{
-   double size=s.high-s.low;
-   return s.dir>0?s.high+(extension-1.0)*size:s.low-(extension-1.0)*size;
-}
-
-bool AurumSwingValid(const AurumSwing &s)
-{
-   return s.dir!=0 && AurumNumber(s.high) && AurumNumber(s.low) && s.high>s.low && s.low>0;
-}
-
-// Candle low pulled back into the 0.5 - 0.786 zone of an up-swing and closed above 0.786.
-bool AurumFibBuy(const AurumCandle &c,const AurumSwing &s,const double tol)
-{
-   if(!AurumSwingValid(s) || s.dir<=0) return false;
-   double nearPrice=AurumFibPrice(s,AURUM_FIB_NEAR);
-   double farPrice=AurumFibPrice(s,AURUM_FIB_FAR);
-   return c.low<=nearPrice+tol && c.low>=farPrice-tol && c.close>farPrice;
-}
-
-// Candle high pulled back into the 0.5 - 0.786 zone of a down-swing and closed below 0.786.
-bool AurumFibSell(const AurumCandle &c,const AurumSwing &s,const double tol)
-{
-   if(!AurumSwingValid(s) || s.dir>=0) return false;
-   double nearPrice=AurumFibPrice(s,AURUM_FIB_NEAR);
-   double farPrice=AurumFibPrice(s,AURUM_FIB_FAR);
-   return c.high>=nearPrice-tol && c.high<=farPrice+tol && c.close<farPrice;
-}
-
 // ---------- Decision ----------
-// Confluence points (0-4). A supply/demand zone counts double.
-int AurumScore(const bool zone,const bool level,const bool fib)
+// Confluence points (0-3). A supply/demand zone counts double.
+int AurumScore(const bool zone,const bool level)
 {
-   return (zone?2:0)+(level?1:0)+(fib?1:0);
+   return (zone?2:0)+(level?1:0);
 }
 
 int AurumPointsNeeded(const int mode)
@@ -208,22 +158,31 @@ double AurumSellStop(const double entry,const double structureHigh,const double 
    return AurumMax(stop,entry+minRiskATR*atr);
 }
 
-// nearest: closest opposing S/R, supply zone or swing high that is at least 1R above entry
-// (<=0 if none). fibTarget: 1.618 extension of the up-swing (<=0 if none).
-void AurumBuyTargets(const double entry,const double stop,const double nearest,
-                     const double fibTarget,double &tp1,double &tp2)
+// TP1 = nearest opposing area (resistance or supply) at least 1R away, else 1.5R.
+// TP2 = the next opposing area at least 0.5R beyond TP1, else TP1 + 1R.
+// Pass <=0 when there is no such area.
+double AurumBuyTP1(const double entry,const double stop,const double nearest)
 {
    double risk=entry-stop;
-   tp1=nearest>=entry+risk?nearest:entry+1.5*risk;
-   tp2=fibTarget>tp1+0.5*risk?fibTarget:tp1+risk;
+   return nearest>=entry+risk?nearest:entry+1.5*risk;
 }
 
-void AurumSellTargets(const double entry,const double stop,const double nearest,
-                      const double fibTarget,double &tp1,double &tp2)
+double AurumBuyTP2(const double entry,const double stop,const double tp1,const double next)
+{
+   double risk=entry-stop;
+   return next>=tp1+0.5*risk?next:tp1+risk;
+}
+
+double AurumSellTP1(const double entry,const double stop,const double nearest)
 {
    double risk=stop-entry;
-   tp1=(nearest>0 && nearest<=entry-risk)?nearest:entry-1.5*risk;
-   tp2=(fibTarget>0 && fibTarget<tp1-0.5*risk)?fibTarget:tp1-risk;
+   return (nearest>0 && nearest<=entry-risk)?nearest:entry-1.5*risk;
+}
+
+double AurumSellTP2(const double entry,const double stop,const double tp1,const double next)
+{
+   double risk=stop-entry;
+   return (next>0 && next<=tp1-0.5*risk)?next:tp1-risk;
 }
 
 // Select the latest COMPLETED higher-timeframe bar at the entry candle close.

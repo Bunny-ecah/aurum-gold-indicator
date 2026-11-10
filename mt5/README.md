@@ -1,4 +1,4 @@
-# Aurum Gold for MT5 — v3.00 (SNR + SND + Fibonacci)
+# Aurum Gold for MT5 — v3.00 (SNR + SND)
 
 Signals-only indicator for gold/USD on desktop MT5. It does **not** place orders. Same rules as TradingView v5 — see [`../tradingview/V5-GUIDE.md`](../tradingview/V5-GUIDE.md) for the full explanation.
 
@@ -19,14 +19,13 @@ Any timeframe works — v2's "wrong timeframe" lock is gone. Optional presets in
 
 ## The rules in one line
 
-**BUY** = trend UP + price dips into **Demand (2 pts) / Support (1 pt) / Fibonacci 0.5–0.786 (1 pt)** + candle closes back above it. **SELL** is the mirror. Balanced mode needs 2 points, Strict 3, Aggressive 1. Trend = last completed higher-timeframe candle vs its EMA 200 (chart EMA 200 is used while trend history loads).
+**BUY** = trend UP + price dips into **Demand (2 pts) and/or Support (1 pt)** + candle closes back above it. **SELL** is the mirror. Balanced needs 2 points (a zone), Strict 3 (zone + S/R), Aggressive 1 (any zone or S/R). Trend = last completed higher-timeframe candle vs its EMA 200 (chart EMA 200 is used while trend history loads).
 
 ## On the chart
 
-- Green / red arrows with `BUY ** Demand Fib` text: signals (stars = points).
+- Green / red arrows with `BUY ** Demand` text: signals (stars = points).
 - Shaded rectangles: Demand (green) and Supply (red) zones.
 - Dashed lines: Support **S** and Resistance **R**.
-- Dotted orange lines: Fibonacci 0 / 0.382 / 0.5 / 0.618 / 0.786 / 1 and the 1.618 target.
 - Solid lines: Entry, Stop loss, TP1, TP2 of the latest signal.
 - Panel: trend, mode, where price is now, last signal, levels, next step, live spread and alert status.
 
@@ -35,10 +34,10 @@ Any timeframe works — v2's "wrong timeframe" lock is gone. Optional presets in
 | Group | Input | Default |
 | --- | --- | --- |
 | 1. Signals | Signal mode | Balanced |
-| | Swing size (S/R and Fibonacci) | Normal (5) |
+| | Swing size for S/R levels | Normal (5) |
 | | Trend timeframe | Current = auto |
 | | Candles between same-side signals | 5 |
-| 2. Show on chart | S/R, zones, Fibonacci, trade lines, panel | all on |
+| 2. Show on chart | S/R, zones, trade lines, panel | all on |
 | 3. Alerts | Popup / push / sound | popup on |
 | | Pause alerts if spread is wider than | 0.50 (price units, not pips) |
 | 4. Advanced | Zone impulse ATR, stop buffer, minimum stop, max items, ATR period, history, panel position | keep defaults |
@@ -47,12 +46,12 @@ Any timeframe works — v2's "wrong timeframe" lock is gone. Optional presets in
 
 - Sent only for a **new** closed candle after the indicator is running. Old signals are never alerted on load.
 - Skipped (and shown on the panel) when MT5 is disconnected, the quote is stale, the spread is above the cap, or more than 60 s passed after the candle closed.
-- Message: `Aurum BUY ** XAUUSD PERIOD_M5 | Demand Fib | Entry … | SL … | TP1 … | TP2 …`.
+- Message: `Aurum BUY ** XAUUSD PERIOD_M5 | Demand Support | Entry … | SL … | TP1 … | TP2 …`.
 - Phone: in MT5 mobile copy your **MetaQuotes ID** → desktop **Tools > Options > Notifications** → enable, paste ID, **Test** → set `Phone push notification = true`.
 
 ## Developer tests
 
-The shared rules in `AurumCore.mqh` are compiled as C++ and tested (79 checks):
+The shared rules in `AurumCore.mqh` are compiled as C++ and tested (71 checks):
 
 - Windows (x64 Native Tools prompt): `tests\run-tests.cmd`
 - Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN tests/core_tests.cpp -o core_tests && ./core_tests`
