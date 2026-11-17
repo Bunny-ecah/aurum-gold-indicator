@@ -1,4 +1,4 @@
-"""Reference model of the Aurum v5 / MT5 v3 rules (SNR + SND).
+"""Reference model of the Aurum v6 (TradingView) / v4 (MT5) rules: SNR + SND, one trade at a time.
 
 Mirrors the per-candle replay used by AurumSignalAudit.pine and AurumConfirmation.mq5:
 evaluate the closed candle against EXISTING areas, then update the areas.
@@ -46,11 +46,45 @@ def add_zone(zones, top, bot, bar, cap):
 class Settings:
     mode: str = "Balanced"
     pivot: int = 5
-    cooldown: int = 5
     impulse: float = 1.5
     sl_buffer: float = 0.2
     min_risk: float = 0.5
     cap: int = 4
+    min_rr: float = 1.5
+    max_bars: int = 100
+
+
+def target(side, entry, stop, nearest, min_rr):
+    """TP = next opposite area (capped at max(3, minRR) R); none -> max(2, minRR) R.
+    Returns None when the next opposite area is closer than minRR (trade not worth it)."""
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return None
+    if nearest is not None:
+        rr = (nearest - entry) / risk * side
+        if rr < min_rr:
+            return None
+        return entry + side * min(rr, max(3.0, min_rr)) * risk
+    return entry + side * max(2.0, min_rr) * risk
+
+
+def trade_step(side, entry, stop, tp, bar, held, max_bars):
+    """Follow an open trade for one closed candle. Returns R when it closes, else None.
+    SL is checked first: a candle touching both SL and TP counts as a loss."""
+    o, h, l, c = bar
+    risk = abs(entry - stop)
+    if (l <= stop) if side > 0 else (h >= stop):
+        return -1.0
+    if (h >= tp) if side > 0 else (l <= tp):
+        return abs(tp - entry) / risk
+    if held >= max_bars:
+        return (c - entry) / risk * side
+    return None
+
+
+def lots(balance, risk_pct, entry, stop, contract=100.0, step=0.01):
+    raw = balance * risk_pct / 100.0 / (abs(entry - stop) * contract)
+    return int(raw / step + 1e-9) * step
 
 
 @dataclass
@@ -61,21 +95,27 @@ class Signal:
     why: str
     entry: float
     sl: float
-    tp1: float
-    tp2: float
+    tp: float
+    exit_bar: int = None
+    result: float = None
 
 
 def run(bars, trend, s=Settings()):
     """bars: list of (open, high, low, close); trend: list of 1/-1/0 per bar."""
     atr = atr_series(bars)
     res, sup, demand, supply, signals = [], [], [], [], []
-    last_buy = last_sell = None
+    trade = None
     L = s.pivot
     for i in range(len(bars)):
         o, h, l, c = bars[i]
         a = atr[i - 1] if i > 0 else None
         if a is None or a <= 0 or i <= 2 * L + 14:
             continue
+        # 0) follow the open trade
+        if trade is not None:
+            r = trade_step(trade.side, trade.entry, trade.sl, trade.tp, bars[i], i - trade.bar, s.max_bars)
+            if r is not None:
+                trade.exit_bar, trade.result, trade = i, r, None
         tol = TOUCH_ATR * a
         d_hits = [z for z in demand if z[0] > z[1] and l <= z[0] + tol and c > z[0]]
         s_hits = [z for z in supply if z[0] > z[1] and h >= z[1] - tol and c < z[1]]
@@ -86,34 +126,28 @@ def run(bars, trend, s=Settings()):
         need = POINTS_NEEDED[s.mode]
         buy_raw = bull_rejection(o, h, l, c) and buy_score >= need and trend[i] > 0
         sell_raw = bear_rejection(o, h, l, c) and sell_score >= need and trend[i] < 0
-        buy = buy_raw and not sell_raw and (last_buy is None or i - last_buy > s.cooldown)
-        sell = sell_raw and not buy_raw and (last_sell is None or i - last_sell > s.cooldown)
+        buy = buy_raw and not sell_raw and trade is None     # one trade at a time
+        sell = sell_raw and not buy_raw and trade is None
         if buy or sell:
             entry = c
             if buy:
                 structure = min([l] + [z[1] for z in d_hits] + sup_hits)
                 sl = min(structure - s.sl_buffer * a, entry - s.min_risk * a)
-                risk = entry - sl
-                areas = [p for p, _ in res] + [z[1] for z in supply]
-                near = [p for p in areas if p >= entry + risk]
-                tp1 = min(near) if near else entry + 1.5 * risk
-                nxt = [p for p in areas if p >= tp1 + 0.5 * risk]
-                tp2 = min(nxt) if nxt else tp1 + risk
-                last_buy = i
-                why = " ".join(n for n, f in (("Demand", d_hits), ("Support", sup_hits)) if f)
-                signals.append(Signal(i, 1, buy_score, why, entry, sl, tp1, tp2))
+                above = [p for p, _ in res if p > entry] + [z[1] for z in supply if z[1] > entry]
+                tp = target(1, entry, sl, min(above) if above else None, s.min_rr)
+                if tp is not None:
+                    why = " ".join(n for n, f in (("Demand", d_hits), ("Support", sup_hits)) if f)
+                    trade = Signal(i, 1, buy_score, why, entry, sl, tp)
+                    signals.append(trade)
             else:
                 structure = max([h] + [z[0] for z in s_hits] + res_hits)
                 sl = max(structure + s.sl_buffer * a, entry + s.min_risk * a)
-                risk = sl - entry
-                areas = [p for p, _ in sup] + [z[0] for z in demand]
-                near = [p for p in areas if p <= entry - risk]
-                tp1 = max(near) if near else entry - 1.5 * risk
-                nxt = [p for p in areas if p <= tp1 - 0.5 * risk]
-                tp2 = max(nxt) if nxt else tp1 - risk
-                last_sell = i
-                why = " ".join(n for n, f in (("Supply", s_hits), ("Resistance", res_hits)) if f)
-                signals.append(Signal(i, -1, sell_score, why, entry, sl, tp1, tp2))
+                below = [p for p, _ in sup if p < entry] + [z[0] for z in demand if z[0] < entry]
+                tp = target(-1, entry, sl, max(below) if below else None, s.min_rr)
+                if tp is not None:
+                    why = " ".join(n for n, f in (("Supply", s_hits), ("Resistance", res_hits)) if f)
+                    trade = Signal(i, -1, sell_score, why, entry, sl, tp)
+                    signals.append(trade)
         # --- update areas
         merge = MERGE_ATR * a
         demand[:] = [z for z in demand if not c < z[1]]
@@ -147,3 +181,12 @@ def run(bars, trend, s=Settings()):
             p = bars[k][2]
             add_level(sup if c > p else res, p, k, merge, s.cap)
     return signals
+
+
+def record(signals):
+    """Closed-trade statistics: (trades, wins, win %, avg R, total R)."""
+    done = [x.result for x in signals if x.result is not None]
+    wins = sum(1 for r in done if r > 0)
+    total = sum(done)
+    n = len(done)
+    return n, wins, (100.0 * wins / n if n else 0.0), (total / n if n else 0.0), total

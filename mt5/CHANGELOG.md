@@ -1,3 +1,12 @@
+# v4.00
+
+- Big STATUS on the panel: BUY NOW / SELL NOW / IN TRADE / WAIT, with what to wait for next.
+- One trade at a time with a single target: the next opposite area (1.5R to 3R), or 2R when there is none. Setups whose target is closer than `MinReward` are skipped and shown as a NOTE.
+- Lot size from account balance, `RiskPercent` and the broker tick value.
+- Built-in RECORD (backtest of the rules on the scanned history): every signal is followed to TP, SL (a candle touching both = loss) or the time limit; panel shows trades, win %, average R, total R and the last 20.
+- Clean chart: only the nearest area above and below price; open trade drawn as risk/reward boxes; result text where each trade ended.
+- Removed cooldown, TP2 and several display switches. 82 core checks. Not yet compiled in MetaEditor.
+
 # v3.00
 
 - New signal logic shared with TradingView v5: higher-timeframe trend + Supply/Demand zones (2 points) and Support/Resistance (1 point) + a rejection candle.

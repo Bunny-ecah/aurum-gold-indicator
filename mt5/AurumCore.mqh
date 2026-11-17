@@ -136,12 +136,6 @@ int AurumDecide(const int mode,const int trendDir,
    return buy?1:sell?-1:0;
 }
 
-// Same-direction signals need a gap of more than cooldown candles. lastBar<0 = none yet.
-bool AurumCooldownOK(const int bar,const int lastBar,const int cooldown)
-{
-   return lastBar<0 || bar-lastBar>cooldown;
-}
-
 // ---------- Trade levels ----------
 // Stop beyond the structure that was touched, at least minRiskATR x ATR from entry.
 double AurumBuyStop(const double entry,const double structureLow,const double atr,
@@ -158,31 +152,61 @@ double AurumSellStop(const double entry,const double structureHigh,const double 
    return AurumMax(stop,entry+minRiskATR*atr);
 }
 
-// TP1 = nearest opposing area (resistance or supply) at least 1R away, else 1.5R.
-// TP2 = the next opposing area at least 0.5R beyond TP1, else TP1 + 1R.
-// Pass <=0 when there is no such area.
-double AurumBuyTP1(const double entry,const double stop,const double nearest)
+// Target = the next opposite area (resistance/supply above a BUY, support/demand below a SELL),
+// capped at max(3, minRR) R. With no area, max(2, minRR) R.
+// Returns false when that area is closer than minRR x risk: the trade is not worth taking.
+// dir: 1 BUY, -1 SELL. nearest: price of the next opposite area, or <=0 if none.
+bool AurumTarget(const int dir,const double entry,const double stop,const double nearest,
+                 const double minRR,double &tp)
 {
-   double risk=entry-stop;
-   return nearest>=entry+risk?nearest:entry+1.5*risk;
+   double risk=AurumAbs(entry-stop);
+   if(risk<=0 || dir==0) return false;
+   if(nearest>0 && (nearest-entry)*dir>0)
+   {
+      double rr=(nearest-entry)*dir/risk;
+      if(rr<minRR) return false;
+      tp=entry+dir*AurumMin(rr,AurumMax(3.0,minRR))*risk;
+      return true;
+   }
+   tp=entry+dir*AurumMax(2.0,minRR)*risk;
+   return true;
 }
 
-double AurumBuyTP2(const double entry,const double stop,const double tp1,const double next)
+// Reward-to-risk of a planned trade (2.0 means 1 : 2).
+double AurumRR(const double entry,const double stop,const double tp)
 {
-   double risk=entry-stop;
-   return next>=tp1+0.5*risk?next:tp1+risk;
+   double risk=AurumAbs(entry-stop);
+   return risk>0?AurumAbs(tp-entry)/risk:0;
 }
 
-double AurumSellTP1(const double entry,const double stop,const double nearest)
+// ---------- Trade record (also used for backtesting) ----------
+// Follow an open trade for one closed candle. Returns true when the trade closes and sets
+// resultR (+R won, -1 lost). Stop loss is checked first, so a candle that touches both the
+// stop and the target counts as a LOSS. After maxBars candles the trade closes at the close.
+bool AurumTradeStep(const int dir,const double entry,const double stop,const double tp,
+                    const AurumCandle &c,const int barsHeld,const int maxBars,double &resultR)
 {
-   double risk=stop-entry;
-   return (nearest>0 && nearest<=entry-risk)?nearest:entry-1.5*risk;
+   double risk=AurumAbs(entry-stop);
+   if(risk<=0) { resultR=0; return true; }
+   bool stopHit=dir>0?c.low<=stop:c.high>=stop;
+   bool targetHit=dir>0?c.high>=tp:c.low<=tp;
+   if(stopHit) { resultR=-1.0; return true; }
+   if(targetHit) { resultR=AurumAbs(tp-entry)/risk; return true; }
+   if(barsHeld>=maxBars) { resultR=(c.close-entry)*dir/risk; return true; }
+   return false;
 }
 
-double AurumSellTP2(const double entry,const double stop,const double tp1,const double next)
+// Lot size for a fixed money risk. moneyPerPricePerLot: account money gained or lost per 1.0
+// price move with 1 lot (XAUUSD standard lot of 100 oz in a USD account = 100).
+// Rounded DOWN to the lot step. Returns 0 when even the minimum lot risks too much.
+double AurumLots(const double riskMoney,const double entry,const double stop,
+                 const double moneyPerPricePerLot,const double step,const double minLot)
 {
-   double risk=stop-entry;
-   return (next>0 && next<=tp1-0.5*risk)?next:tp1-risk;
+   double distance=AurumAbs(entry-stop);
+   if(riskMoney<=0 || distance<=0 || moneyPerPricePerLot<=0 || step<=0) return 0;
+   double raw=riskMoney/(distance*moneyPerPricePerLot);
+   double lots=step*(double)(long)(raw/step+1e-9);
+   return lots>=minLot?lots:0;
 }
 
 // Select the latest COMPLETED higher-timeframe bar at the entry candle close.

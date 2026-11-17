@@ -1,6 +1,6 @@
 #property copyright "Aurum Gold - demo research"
-#property version   "3.00"
-#property description "XAUUSD SNR + SND (support/resistance + supply/demand) signals on closed candles. No order execution."
+#property version   "4.00"
+#property description "XAUUSD supply/demand + support/resistance signals with entry, stop, target, lot size and a built-in track record. No order execution."
 #property indicator_chart_window
 #property indicator_buffers 2
 #property indicator_plots   2
@@ -14,9 +14,10 @@
 #property indicator_width2  2
 #include "AurumCore.mqh"
 
-// BUY  = trend UP + price dips into DEMAND (2 pts) and/or SUPPORT (1 pt)
-//        + the candle closes back above it. SELL = the mirror image.
-// Points needed: Aggressive 1, Balanced 2, Strict 3. Stars (*) = points. Same rules as TradingView v5.
+// BUY  = trend UP + price dips into DEMAND (2 pts) and/or SUPPORT (1 pt) + the candle closes back above it
+//        + the target (next resistance/supply) is at least MinReward x risk away. SELL = the mirror image.
+// One trade at a time; it closes at TP, SL or after MaxTradeBars candles. Closed trades form the RECORD
+// (a built-in backtest of these rules). Same rules as TradingView v6.
 
 enum AurumSignalMode
 {
@@ -36,24 +37,25 @@ input group "1. Signals"
 input AurumSignalMode SignalMode=SIGNALS_BALANCED;      // Signal mode
 input AurumSwingSize  SwingSize=SWING_NORMAL;           // Swing size for S/R levels
 input ENUM_TIMEFRAMES TrendTimeframe=PERIOD_CURRENT;    // Trend timeframe (current = auto)
-input int    CooldownBars=5;                            // Candles between same-side signals
-input group "2. Show on chart"
-input bool   ShowSR=true;                               // Support / Resistance (SNR)
-input bool   ShowZones=true;                            // Supply / Demand zones (SND)
-input bool   ShowTrade=true;                            // Entry / SL / TP of last signal
-input bool   ShowPanel=true;                            // Info panel
-input group "3. Alerts"
+input group "2. Risk"
+input double RiskPercent=1.0;                           // Risk per trade (% of balance)
+input double MinReward=1.5;                             // Minimum reward (x risk); closer targets are skipped
+input group "3. Display"
+input bool   ShowAll=false;                             // Show all nearby zones and levels (off = nearest only)
+input bool   ShowHistory=true;                          // Show past signals and results
+input group "4. Alerts"
 input bool   PopupAlerts=true;                          // Popup alert
 input bool   PushNotifications=false;                   // Phone push notification
 input bool   SoundAlerts=false;                         // Sound
 input double MaxSpreadPrice=0.50;                       // Pause alerts if ask-bid is wider (price units)
-input group "4. Advanced (defaults are fine)"
+input group "5. Advanced (defaults are fine)"
 input double ImpulseATR=1.5;                            // Zone impulse: candle body >= ATR x
-input double SLBufferATR=0.2;                           // Stop-loss buffer beyond structure (ATR x)
+input double SLBufferATR=0.2;                           // Stop-loss buffer beyond the area (ATR x)
 input double MinRiskATR=0.5;                            // Minimum stop-loss distance (ATR x)
 input int    MaxItems=4;                                // Max zones / levels kept per side
 input int    ATRPeriod=14;                              // ATR period
-input int    HistoryBars=1500;                          // Candles to scan
+input int    MaxTradeBars=100;                          // Close a trade after (candles)
+input int    HistoryBars=3000;                          // Candles to scan (also the record length)
 input int    PanelX=12;                                 // Panel X
 input int    PanelY=24;                                 // Panel Y
 input int    PanelFontSize=10;                          // Panel font size
@@ -78,14 +80,18 @@ string delivery="No new signal yet";
 double resP[],supP[],dTop[],dBot[],sTop[],sBot[];
 datetime resT[],supT[],dTime[],sTime[];
 
-// Last signal
-int sigDir=0,sigScore=0,sigState=0,sigK=0;   // sigState: 0 none, 1 active, 2 finished
-bool sigTP1Hit=false;
-string sigResult="";
+// Open trade
+bool inTrade=false;
+int tDir=0,tK=0,tScore=0,tAge=0;
+datetime tTime=0;
+double tEntry=0,tSL=0,tTP=0;
+string tWhy="";
+// Record of closed trades (R multiples) = built-in backtest
+double results[];
+int lastDir=0,lastAge=0,skipAge=-1;
+double lastR=0;
+string lastHow="",skipText="";
 double lastClose=0,lastATR=0;
-datetime sigTime=0;
-double sigEntry=0,sigSL=0,sigTP1=0,sigTP2=0;
-string sigWhy="",areaText="--";
 int trendNow=0;
 
 ENUM_TIMEFRAMES AutoTrendTF()
@@ -99,8 +105,31 @@ ENUM_TIMEFRAMES AutoTrendTF()
    return PERIOD_MN1;
 }
 
-string Stars(const int n) { return n>=3?"***":n==2?"**":"*"; }
 string Price(const double p) { return p>0?DoubleToString(p,_Digits):"--"; }
+string RText(const double r) { return (r>=0?"+":"")+DoubleToString(r,2)+"R"; }
+string TFText(const ENUM_TIMEFRAMES tf)
+{
+   string s=EnumToString(tf);
+   StringReplace(s,"PERIOD_","");
+   return s;
+}
+
+// ---------- Risk ----------
+double MoneyPerPricePerLot()
+{
+   double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE_LOSS);
+   if(tickValue<=0) tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+   return tickSize>0?tickValue/tickSize:0;
+}
+
+double RiskMoney() { return AccountInfoDouble(ACCOUNT_BALANCE)*RiskPercent/100.0; }
+
+double LotSize(const double entry,const double stop)
+{
+   return AurumLots(RiskMoney(),entry,stop,MoneyPerPricePerLot(),
+                    SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN));
+}
 
 // ---------- Area bookkeeping ----------
 void PushLevel(double &p[],datetime &t[],const double price,const datetime when,const double tol)
@@ -126,9 +155,9 @@ void PushZone(double &top[],double &bot[],datetime &t[],const double zTop,const 
 void ResetState()
 {
    ArrayFree(resP); ArrayFree(supP); ArrayFree(dTop); ArrayFree(dBot); ArrayFree(sTop); ArrayFree(sBot);
-   ArrayFree(resT); ArrayFree(supT); ArrayFree(dTime); ArrayFree(sTime);
-   sigDir=0; sigScore=0; sigTime=0; sigEntry=0; sigSL=0; sigTP1=0; sigTP2=0; sigWhy=""; areaText="--";
-   sigState=0; sigK=0; sigTP1Hit=false; sigResult="";
+   ArrayFree(resT); ArrayFree(supT); ArrayFree(dTime); ArrayFree(sTime); ArrayFree(results);
+   inTrade=false; tDir=0; tK=0; tScore=0; tAge=0; tTime=0; tEntry=0; tSL=0; tTP=0; tWhy="";
+   lastDir=0; lastAge=0; lastR=0; lastHow=""; skipAge=-1; skipText="";
 }
 
 // Pivot at series index k: higher than the L older candles, not lower than the L newer candles.
@@ -146,33 +175,73 @@ bool PivotLow(const double &low[],const int k,const int L)
    return true;
 }
 
+// ---------- Nearest areas ----------
+// kind: 0 none, 1 zone, 2 level
+void AreaAbove(int &kind,double &top,double &bot,datetime &start)
+{
+   kind=0; double best=-1;
+   for(int i=0;i<ArraySize(sTop);i++)
+   {
+      double d=MathMax(0,sBot[i]-lastClose);
+      if(sTop[i]>=lastClose && (best<0 || d<best)) { best=d; kind=1; top=sTop[i]; bot=sBot[i]; start=sTime[i]; }
+   }
+   for(int i=0;i<ArraySize(resP);i++)
+   {
+      double d=resP[i]-lastClose;
+      if(d>0 && (best<0 || d<best)) { best=d; kind=2; top=resP[i]; bot=resP[i]; start=resT[i]; }
+   }
+}
+
+void AreaBelow(int &kind,double &top,double &bot,datetime &start)
+{
+   kind=0; double best=-1;
+   for(int i=0;i<ArraySize(dTop);i++)
+   {
+      double d=MathMax(0,lastClose-dTop[i]);
+      if(dBot[i]<=lastClose && (best<0 || d<best)) { best=d; kind=1; top=dTop[i]; bot=dBot[i]; start=dTime[i]; }
+   }
+   for(int i=0;i<ArraySize(supP);i++)
+   {
+      double d=lastClose-supP[i];
+      if(d>0 && (best<0 || d<best)) { best=d; kind=2; top=supP[i]; bot=supP[i]; start=supT[i]; }
+   }
+}
+
+string AreaText(const int kind,const double top,const double bot,const bool above)
+{
+   if(kind==1) return (above?"Supply ":"Demand ")+Price(bot)+" - "+Price(top);
+   if(kind==2) return (above?"Resistance ":"Support ")+Price(top);
+   return "none nearby";
+}
+
 // ---------- Drawing ----------
 void Line(const string name,const datetime t1,const datetime t2,const double p,const color c,
-          const ENUM_LINE_STYLE style,const int width,const bool ray)
+          const ENUM_LINE_STYLE style,const int width)
 {
    ObjectCreate(0,name,OBJ_TREND,0,t1,p,t2,p);
    ObjectSetInteger(0,name,OBJPROP_COLOR,c);
    ObjectSetInteger(0,name,OBJPROP_STYLE,style);
    ObjectSetInteger(0,name,OBJPROP_WIDTH,width);
-   ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,ray);
+   ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
    ObjectSetInteger(0,name,OBJPROP_BACK,true);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
 }
 
-void Text(const string name,const datetime t,const double p,const string text,const color c,const ENUM_ANCHOR_POINT anchor)
+void Text(const string name,const datetime t,const double p,const string text,const color c,
+          const ENUM_ANCHOR_POINT anchor,const int size=8)
 {
    ObjectCreate(0,name,OBJ_TEXT,0,t,p);
    ObjectSetString(0,name,OBJPROP_TEXT,text);
    ObjectSetString(0,name,OBJPROP_FONT,"Arial");
-   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,size);
    ObjectSetInteger(0,name,OBJPROP_COLOR,c);
    ObjectSetInteger(0,name,OBJPROP_ANCHOR,anchor);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
 }
 
-void Zone(const string name,const datetime t1,const datetime t2,const double top,const double bot,const color c,const color textColor,const string text)
+void Box(const string name,const datetime t1,const datetime t2,const double top,const double bot,const color c)
 {
    ObjectCreate(0,name,OBJ_RECTANGLE,0,t1,top,t2,bot);
    ObjectSetInteger(0,name,OBJPROP_COLOR,c);
@@ -180,121 +249,168 @@ void Zone(const string name,const datetime t1,const datetime t2,const double top
    ObjectSetInteger(0,name,OBJPROP_BACK,true);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-   Text(name+"t",t2,top,text,textColor,ANCHOR_RIGHT_LOWER);
 }
 
-// Only areas near the current price are drawn, so old far-away levels do not clutter the chart.
-bool Near(const double p) { return MathAbs(p-lastClose)<=8.0*lastATR; }
+void DrawZone(const string name,const datetime t1,const datetime t2,const double top,const double bot,const bool supply)
+{
+   Box(name,t1,t2,top,bot,supply?C'90,20,24':C'0,70,64');
+   Text(name+"t",t2,top,supply?"Supply":"Demand",supply?clrTomato:clrMediumSeaGreen,ANCHOR_RIGHT_LOWER);
+}
+
+void DrawLevel(const string name,const datetime t1,const datetime t2,const double p,const bool resistance)
+{
+   color c=resistance?clrTomato:clrMediumSeaGreen;
+   Line(name,t1,t2,p,c,STYLE_DASH,1);
+   Text(name+"t",t2,p,(resistance?"R ":"S ")+Price(p),c,ANCHOR_LEFT);
+}
 
 void DrawAreas(const datetime lastTime)
 {
    ObjectsDeleteAll(0,prefix+"d");
    datetime rightT=lastTime+12*PeriodSeconds(_Period);
-   if(ShowZones)
+   if(ShowAll)
    {
+      double range8=8.0*lastATR;
       for(int i=0;i<ArraySize(dTop);i++)
-         if((Near(dTop[i]) || Near(dBot[i])) && dBot[i]<=lastClose) Zone(prefix+"dz"+IntegerToString(i),dTime[i],rightT,dTop[i],dBot[i],C'0,70,64',clrMediumSeaGreen,"Demand");
+         if(dBot[i]<=lastClose && lastClose-dTop[i]<=range8) DrawZone(prefix+"dz"+IntegerToString(i),dTime[i],rightT,dTop[i],dBot[i],false);
       for(int i=0;i<ArraySize(sTop);i++)
-         if((Near(sTop[i]) || Near(sBot[i])) && sTop[i]>=lastClose) Zone(prefix+"ds"+IntegerToString(i),sTime[i],rightT,sTop[i],sBot[i],C'90,20,24',clrTomato,"Supply");
-   }
-   if(ShowSR)
-   {
+         if(sTop[i]>=lastClose && sBot[i]-lastClose<=range8) DrawZone(prefix+"ds"+IntegerToString(i),sTime[i],rightT,sTop[i],sBot[i],true);
       for(int i=0;i<ArraySize(supP);i++)
-      {
-         if(!Near(supP[i])) continue;
-         Line(prefix+"dsl"+IntegerToString(i),supT[i],rightT,supP[i],clrMediumSeaGreen,STYLE_DASH,1,false);
-         Text(prefix+"dslt"+IntegerToString(i),rightT,supP[i],"S "+Price(supP[i]),clrMediumSeaGreen,ANCHOR_LEFT);
-      }
+         if(supP[i]<lastClose && lastClose-supP[i]<=range8) DrawLevel(prefix+"dsl"+IntegerToString(i),supT[i],rightT,supP[i],false);
       for(int i=0;i<ArraySize(resP);i++)
-      {
-         if(!Near(resP[i])) continue;
-         Line(prefix+"drl"+IntegerToString(i),resT[i],rightT,resP[i],clrTomato,STYLE_DASH,1,false);
-         Text(prefix+"drlt"+IntegerToString(i),rightT,resP[i],"R "+Price(resP[i]),clrTomato,ANCHOR_LEFT);
-      }
+         if(resP[i]>lastClose && resP[i]-lastClose<=range8) DrawLevel(prefix+"drl"+IntegerToString(i),resT[i],rightT,resP[i],true);
    }
-   // Trade lines only while the trade is still active (not SL / TP2 / expired)
-   if(ShowTrade && sigDir!=0 && sigState==1)
+   else
    {
-      double values[4]; values[0]=sigEntry; values[1]=sigSL; values[2]=sigTP1; values[3]=sigTP2;
-      string names[4]; names[0]=sigDir>0?"BUY entry":"SELL entry"; names[1]="Stop loss"; names[2]="TP1"; names[3]="TP2";
-      for(int i=0;i<4;i++)
-      {
-         color c=i==0?clrDodgerBlue:i==1?clrRed:clrLimeGreen;
-         datetime tradeT=lastTime+4*PeriodSeconds(_Period);
-         Line(prefix+"dtl"+IntegerToString(i),sigTime,tradeT,values[i],c,STYLE_SOLID,2,false);
-         Text(prefix+"dtlt"+IntegerToString(i),tradeT,values[i],names[i]+"  "+Price(values[i]),c,ANCHOR_LEFT);
-      }
+      // Clean chart: only the nearest area above and the nearest area below
+      int k; double top=0,bot=0; datetime start=0;
+      AreaAbove(k,top,bot,start);
+      if(k==1) DrawZone(prefix+"dza",start,rightT,top,bot,true);
+      else if(k==2) DrawLevel(prefix+"dla",start,rightT,top,true);
+      AreaBelow(k,top,bot,start);
+      if(k==1) DrawZone(prefix+"dzb",start,rightT,top,bot,false);
+      else if(k==2) DrawLevel(prefix+"dlb",start,rightT,top,false);
+   }
+   // Open trade: red risk box and green reward box, like a position tool
+   if(inTrade)
+   {
+      datetime t2=lastTime+6*PeriodSeconds(_Period);
+      Box(prefix+"dtr",tTime,t2,MathMax(tEntry,tSL),MathMin(tEntry,tSL),C'90,20,24');
+      Box(prefix+"dtw",tTime,t2,MathMax(tEntry,tTP),MathMin(tEntry,tTP),C'0,70,64');
+      Text(prefix+"dtt",t2,tTP,"TP "+Price(tTP),clrLimeGreen,ANCHOR_LEFT);
+      Text(prefix+"dte",t2,tEntry,(tDir>0?"BUY ":"SELL ")+Price(tEntry),clrDodgerBlue,ANCHOR_LEFT);
+      Text(prefix+"dts",t2,tSL,"SL "+Price(tSL),clrRed,ANCHOR_LEFT);
    }
 }
 
 // ---------- Panel ----------
+void PanelLabel(const string name,const int x,const int y,const string text,const color c,const int size)
+{
+   if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,size);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,c);
+   ObjectSetString(0,name,OBJPROP_FONT,"Consolas");
+   ObjectSetString(0,name,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+
+void PanelRect(const string name,const int x,const int y,const int w,const int h,const color bg)
+{
+   if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_RECTANGLE_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clrSlateGray);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+
 void RenderPanel()
 {
-   if(!ShowPanel || prefix=="") return;
+   if(prefix=="") return;
+   int lineH=PanelFontSize+8;
+   int width=(int)MathMin(640,MathMax(360,(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)-PanelX-16));
+   string rows[10]; color cols[10];
+   for(int i=0;i<10;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
+
+   rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF); cols[0]=clrGold;
+   rows[1]="TREND        "+(trendNow>0?"UP   only BUY":trendNow<0?"DOWN   only SELL":"FLAT   no trades");
+   cols[1]=trendNow>0?clrMediumSeaGreen:trendNow<0?clrTomato:clrSilver;
+   string status=inTrade?(tAge==0?(tDir>0?"BUY NOW":"SELL NOW"):(tDir>0?"IN BUY TRADE":"IN SELL TRADE")):"WAIT";
+   color statusBg=inTrade?(tDir>0?C'0,110,90':C'150,30,35'):C'70,75,85';
+   if(inTrade)
+   {
+      double risk=MathAbs(tEntry-tSL);
+      double lot=LotSize(tEntry,tSL);
+      double minLot=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+      rows[3]="ENTRY        "+Price(tEntry)+(tAge>0?"   ("+IntegerToString(tAge)+" candles ago)":""); cols[3]=clrDodgerBlue;
+      rows[4]="STOP LOSS    "+Price(tSL); cols[4]=clrTomato;
+      rows[5]="TAKE PROFIT  "+Price(tTP)+"   RR 1 : "+DoubleToString(AurumRR(tEntry,tSL,tTP),1); cols[5]=clrLimeGreen;
+      if(lot>0) rows[6]="LOT SIZE     "+DoubleToString(lot,2)+" lot = risk "+DoubleToString(RiskMoney(),2)+" "+AccountInfoString(ACCOUNT_CURRENCY)+" ("+DoubleToString(RiskPercent,1)+"%)";
+      else { rows[6]="LOT SIZE     min "+DoubleToString(minLot,2)+" lot risks "+DoubleToString(minLot*risk*MoneyPerPricePerLot(),2)+" - above "+DoubleToString(RiskPercent,1)+"%"; cols[6]=clrOrange; }
+   }
+   else
+   {
+      int k; double top=0,bot=0; datetime start=0; string next;
+      if(trendNow>0) { AreaBelow(k,top,bot,start); next=k==0?"No buy area below - wait":"Wait for a dip into "+AreaText(k,top,bot,false)+", then a bullish candle"; }
+      else if(trendNow<0) { AreaAbove(k,top,bot,start); next=k==0?"No sell area above - wait":"Wait for a rally into "+AreaText(k,top,bot,true)+", then a bearish candle"; }
+      else next="Trend is flat - no trades until it turns";
+      rows[3]="NEXT         "+next;
+      if(skipAge>=0 && skipAge<=10) { rows[4]="NOTE         "+skipText; cols[4]=clrOrange; }
+      if(ArraySize(results)>0)
+      {
+         rows[5]="LAST TRADE   "+(lastDir>0?"BUY -> ":"SELL -> ")+lastHow+" "+RText(lastR)+"   ("+IntegerToString(lastAge)+" candles ago)";
+         cols[5]=lastR>0?clrMediumSeaGreen:lastR<0?clrTomato:clrSilver;
+      }
+      else rows[5]="LAST TRADE   No closed trades yet";
+   }
+   int n=ArraySize(results);
+   if(n>0)
+   {
+      int wins=0,wins20=0; double total=0,total20=0; int first20=(int)MathMax(0,n-20);
+      for(int i=0;i<n;i++)
+      {
+         if(results[i]>0) wins++;
+         total+=results[i];
+         if(i>=first20) { if(results[i]>0) wins20++; total20+=results[i]; }
+      }
+      int n20=n-first20;
+      rows[7]="RECORD       "+IntegerToString(n)+" trades  "+DoubleToString(100.0*wins/n,0)+"% win  avg "+RText(total/n)+"  total "+RText(total);
+      cols[7]=total>=0?clrMediumSeaGreen:clrTomato;
+      rows[8]="LAST "+IntegerToString(n20)+"      "+DoubleToString(100.0*wins20/n20,0)+"% win  total "+RText(total20);
+      cols[8]=total20>=0?clrMediumSeaGreen:clrTomato;
+   }
+   else rows[7]="RECORD       No closed trades in the scanned history yet";
    string live; LiveGate(live);
-   string trendText=trendNow>0?"UP (look for BUY)":trendNow<0?"DOWN (look for SELL)":"FLAT (wait)";
-   string modeText=SignalMode==SIGNALS_STRICT?"Strict":SignalMode==SIGNALS_AGGRESSIVE?"Aggressive":"Balanced";
-   string last="None yet";
-   if(sigDir!=0)
+   rows[9]="ALERTS       "+delivery+"  |  "+live; cols[9]=clrSilver;
+
+   PanelRect(prefix+"pbg",PanelX,PanelY,width,12*lineH,C'25,30,38');
+   int statusH=PanelFontSize*2+12;
+   int y=PanelY+8;
+   for(int i=0;i<10;i++)
    {
-      int ago=iBarShift(_Symbol,_Period,sigTime,false);
-      last=(sigDir>0?"BUY ":"SELL ")+Stars(sigScore)+" "+sigWhy+" - "+IntegerToString(ago)+" bars ago - "+(sigState==1?"ACTIVE":sigResult);
+      if(i==2)
+      {
+         // Big status line
+         PanelLabel(prefix+"pl2a",PanelX+10,y+(statusH-lineH)/2,"STATUS",clrSilver,PanelFontSize);
+         PanelRect(prefix+"pst",PanelX+110,y,width-122,statusH,statusBg);
+         PanelLabel(prefix+"pl2",PanelX+122,y+4,status,clrWhite,PanelFontSize+8);
+         y+=statusH+4;
+         continue;
+      }
+      PanelLabel(prefix+"pl"+IntegerToString(i),PanelX+10,y,rows[i],cols[i],PanelFontSize);
+      y+=lineH;
    }
-   string next=trendNow>0?"Wait: dip into Demand/Support + bullish close":
-      trendNow<0?"Wait: rally into Supply/Resistance + bearish close":
-      "Trend flat: no signals until it turns";
-   string rows[11];
-   rows[0]="AURUM GOLD v3 | "+_Symbol+" "+EnumToString(_Period)+" | trend "+EnumToString(trendTF);
-   rows[1]="Trend      : "+trendText;
-   rows[2]="Mode       : "+modeText;
-   rows[3]="Price at   : "+areaText;
-   rows[4]="Last signal: "+last;
-   bool active=sigState==1;
-   rows[5]="Entry      : "+(active?Price(sigEntry):"-- (no active trade)");
-   rows[6]="Stop loss  : "+(active?Price(sigSL):"--");
-   rows[7]="TP1 / TP2  : "+(active?Price(sigTP1)+" / "+Price(sigTP2)+(sigTP1Hit?" (TP1 hit)":""):"--");
-   rows[8]="Next       : "+next;
-   rows[9]="Live       : "+live;
-   rows[10]="Alert      : "+delivery;
-   int lineH=PanelFontSize+7;
-   int width=(int)MathMin(620,MathMax(320,(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)-PanelX-16));
-   string bg=prefix+"pbg";
-   if(ObjectFind(0,bg)<0)
-   {
-      ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
-      ObjectSetInteger(0,bg,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-      ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,C'25,30,38');
-      ObjectSetInteger(0,bg,OBJPROP_BORDER_TYPE,BORDER_FLAT);
-      ObjectSetInteger(0,bg,OBJPROP_COLOR,clrSlateGray);
-      ObjectSetInteger(0,bg,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,bg,OBJPROP_HIDDEN,true);
-   }
-   ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,PanelX);
-   ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,PanelY);
-   ObjectSetInteger(0,bg,OBJPROP_XSIZE,width);
-   ObjectSetInteger(0,bg,OBJPROP_YSIZE,12*lineH);
-   for(int i=0;i<11;i++)
-   {
-      string name=prefix+"pl"+IntegerToString(i);
-      if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_LABEL,0,0,0);
-      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_UPPER);
-      ObjectSetInteger(0,name,OBJPROP_XDISTANCE,PanelX+10);
-      ObjectSetInteger(0,name,OBJPROP_YDISTANCE,PanelY+8+i*lineH);
-      ObjectSetInteger(0,name,OBJPROP_FONTSIZE,PanelFontSize);
-      color c=clrWhiteSmoke;
-      if(i==0) c=clrGold;
-      else if(i==1) c=trendNow>0?clrMediumSeaGreen:trendNow<0?clrTomato:clrSilver;
-      else if(i==4 && sigDir!=0) c=sigDir>0?clrMediumSeaGreen:clrTomato;
-      else if(i==5) c=clrDodgerBlue;
-      else if(i==6) c=clrRed;
-      else if(i==7) c=clrLimeGreen;
-      ObjectSetInteger(0,name,OBJPROP_COLOR,c);
-      ObjectSetString(0,name,OBJPROP_FONT,"Consolas");
-      ObjectSetString(0,name,OBJPROP_TEXT,rows[i]);
-      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-   }
+   ObjectSetInteger(0,prefix+"pbg",OBJPROP_YSIZE,y-PanelY+6);
    ChartRedraw();
 }
 
@@ -306,8 +422,8 @@ bool LiveGate(string &reason)
    if(!SymbolInfoTick(_Symbol,tick) || tick.bid<=0 || tick.ask<tick.bid) { reason="no valid quote"; return false; }
    if(!AurumQuoteFresh((long)TimeTradeServer(),(long)tick.time,MAX_TICK_AGE)) { reason="market closed / stale quote"; return false; }
    double sp=tick.ask-tick.bid;
-   reason="spread "+DoubleToString(sp,_Digits)+" (max "+DoubleToString(MaxSpreadPrice,_Digits)+")";
-   if(sp>MaxSpreadPrice) { reason="PAUSED - "+reason; return false; }
+   reason="spread "+DoubleToString(sp,_Digits);
+   if(sp>MaxSpreadPrice) { reason="PAUSED - "+reason+" > "+DoubleToString(MaxSpreadPrice,_Digits); return false; }
    return true;
 }
 
@@ -341,10 +457,10 @@ int OnInit()
    tester=(bool)MQLInfoInteger(MQL_TESTER);
    pivotLen=(int)SwingSize;
    trendTF=TrendTimeframe==PERIOD_CURRENT?AutoTrendTF():TrendTimeframe;
-   if(CooldownBars<0 || CooldownBars>50 || ImpulseATR<0.5 || ImpulseATR>5 ||
-      SLBufferATR<0 || SLBufferATR>2 || MinRiskATR<0.1 || MinRiskATR>5 ||
-      MaxItems<1 || MaxItems>10 || ATRPeriod<2 || ATRPeriod>200 ||
-      HistoryBars<200 || HistoryBars>10000 || MaxSpreadPrice<=0 ||
+   if(RiskPercent<0.1 || RiskPercent>10 || MinReward<1 || MinReward>5 ||
+      ImpulseATR<0.5 || ImpulseATR>5 || SLBufferATR<0 || SLBufferATR>2 || MinRiskATR<0.1 || MinRiskATR>5 ||
+      MaxItems<1 || MaxItems>10 || ATRPeriod<2 || ATRPeriod>200 || MaxTradeBars<5 || MaxTradeBars>500 ||
+      HistoryBars<200 || HistoryBars>20000 || MaxSpreadPrice<=0 ||
       PanelX<0 || PanelY<0 || PanelFontSize<8 || PanelFontSize>18)
    { Print("Aurum: an input is out of range. Reset inputs to defaults."); return INIT_PARAMETERS_INCORRECT; }
    SetIndexBuffer(0,Buy,INDICATOR_DATA); SetIndexBuffer(1,Sell,INDICATOR_DATA);
@@ -352,17 +468,17 @@ int OnInit()
    PlotIndexSetInteger(0,PLOT_ARROW,233); PlotIndexSetInteger(1,PLOT_ARROW,234);
    PlotIndexSetDouble(0,PLOT_EMPTY_VALUE,EMPTY_VALUE); PlotIndexSetDouble(1,PLOT_EMPTY_VALUE,EMPTY_VALUE);
    IndicatorSetInteger(INDICATOR_DIGITS,_Digits);
-   IndicatorSetString(INDICATOR_SHORTNAME,"Aurum v3");
+   IndicatorSetString(INDICATOR_SHORTNAME,"Aurum v4");
    ha=iATR(_Symbol,_Period,ATRPeriod);
    ht=iMA(_Symbol,trendTF,200,0,MODE_EMA,PRICE_CLOSE);
    he=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
    if(ha==INVALID_HANDLE || ht==INVALID_HANDLE || he==INVALID_HANDLE)
    { Print("Aurum: failed to create indicator handles ",GetLastError()); ReleaseHandles(); return INIT_FAILED; }
-   prefix="Aurum3_"+(string)ChartID()+"_";
+   prefix="Aurum4_"+(string)ChartID()+"_";
    ObjectsDeleteAll(0,prefix);
    if(!EventSetTimer(2)) Print("Aurum: panel timer unavailable ",GetLastError());
    RenderPanel();
-   Print("Aurum v3 ready on ",_Symbol," ",EnumToString(_Period),", trend timeframe ",EnumToString(trendTF),". Signals only; no orders.");
+   Print("Aurum v4 ready on ",_Symbol," ",TFText(_Period),", trend timeframe ",TFText(trendTF),". Signals only; no orders.");
    return INIT_SUCCEEDED;
 }
 
@@ -416,7 +532,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
    ArrayInitialize(Buy,EMPTY_VALUE); ArrayInitialize(Sell,EMPTY_VALUE);
    ResetState();
    ObjectsDeleteAll(0,prefix+"s");
-   int lastBuyK=-1,lastSellK=-1,latestSignal=0;
+   int latestSignal=0,lastExitK=-1,skipK=-1;
    string latestMessage="";
 
    for(int i=limit;i>=1;i--)
@@ -428,15 +544,21 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       double tol=TOUCH_ATR*c.atr;
       if(i==1) { lastClose=c.close; lastATR=atr[1]; }
 
-      // 0) Follow the active trade: SL / TP hit or expired
-      if(sigState==1 && k>sigK)
+      // 0) Follow the open trade: SL / TP / time limit
+      if(inTrade && k>tK)
       {
-         bool slHit=sigDir>0?c.low<=sigSL:c.high>=sigSL;
-         bool tp2Hit=sigDir>0?c.high>=sigTP2:c.low<=sigTP2;
-         if(sigDir>0?c.high>=sigTP1:c.low<=sigTP1) sigTP1Hit=true;
-         if(slHit) { sigState=2; sigResult=sigTP1Hit?"TP1 hit, then SL":"SL hit"; }
-         else if(tp2Hit) { sigState=2; sigResult="TP2 hit"; }
-         else if(k-sigK>=100) { sigState=2; sigResult=sigTP1Hit?"TP1 hit, expired":"Expired"; }
+         double r=0;
+         if(AurumTradeStep(tDir,tEntry,tSL,tTP,c,k-tK,MaxTradeBars,r))
+         {
+            bool slHit=tDir>0?c.low<=tSL:c.high>=tSL;
+            bool tpHit=tDir>0?c.high>=tTP:c.low<=tTP;
+            lastHow=slHit?"SL":tpHit?"TP":"Time exit";
+            inTrade=false; lastDir=tDir; lastR=r; lastExitK=k;
+            int n=ArraySize(results); ArrayResize(results,n+1); results[n]=r;
+            if(ShowHistory)
+               Text(prefix+"sx"+IntegerToString((long)time[i]),time[i],tDir>0?c.high+0.4*c.atr:c.low-0.4*c.atr,
+                    lastHow+" "+RText(r),r>0?clrMediumSeaGreen:r<0?clrTomato:clrSilver,tDir>0?ANCHOR_LOWER:ANCHOR_UPPER,9);
+         }
       }
 
       // Trend for this candle
@@ -472,36 +594,21 @@ int OnCalculate(const int rates_total,const int prev_calculated,
          { resistanceHigh=atResistance?MathMax(resistanceHigh,resP[z]):resP[z]; atResistance=true; }
       int buyScore=AurumScore(inDemand,atSupport);
       int sellScore=AurumScore(inSupply,atResistance);
-      string buyWhy=(inDemand?"Demand ":"")+(atSupport?"Support":"");
-      string sellWhy=(inSupply?"Supply ":"")+(atResistance?"Resistance":"");
-      StringTrimRight(buyWhy); StringTrimRight(sellWhy);
-      if(i==1)
-         areaText=buyScore>0 && sellScore>0?buyWhy+" / "+sellWhy:
-            buyScore>0?buyWhy+" (buy area)":sellScore>0?sellWhy+" (sell area)":"No key area";
 
-      int dir=AurumDecide((int)SignalMode,trendDir,AurumBullRejection(c),buyScore,AurumBearRejection(c),sellScore);
-      if(dir>0 && !AurumCooldownOK(k,lastBuyK,CooldownBars)) dir=0;
-      if(dir<0 && !AurumCooldownOK(k,lastSellK,CooldownBars)) dir=0;
+      int dir=inTrade?0:AurumDecide((int)SignalMode,trendDir,AurumBullRejection(c),buyScore,AurumBearRejection(c),sellScore);
       if(dir!=0)
       {
-         double entry=c.close,stop=0,nearest=0,nextArea=0,tp1=0,tp2=0;
+         double entry=c.close,stop=0,nearest=0,tp=0;
+         string why;
          if(dir>0)
          {
             double structure=c.low;
             if(inDemand) structure=MathMin(structure,demandLow);
             if(atSupport) structure=MathMin(structure,supportLow);
             stop=AurumBuyStop(entry,structure,c.atr,SLBufferATR,MinRiskATR);
-            double risk=entry-stop;
-            // Targets = the next resistance / supply areas above
-            double above[]; int n=0;
-            ArrayResize(above,ArraySize(resP)+ArraySize(sBot));
-            for(int z=0;z<ArraySize(resP);z++) above[n++]=resP[z];
-            for(int z=0;z<ArraySize(sBot);z++) above[n++]=sBot[z];
-            for(int z=0;z<n;z++) if(above[z]>=entry+risk && (nearest==0 || above[z]<nearest)) nearest=above[z];
-            tp1=AurumBuyTP1(entry,stop,nearest);
-            for(int z=0;z<n;z++) if(above[z]>=tp1+0.5*risk && (nextArea==0 || above[z]<nextArea)) nextArea=above[z];
-            tp2=AurumBuyTP2(entry,stop,tp1,nextArea);
-            Buy[i]=c.low-0.3*c.atr; lastBuyK=k;
+            for(int z=0;z<ArraySize(resP);z++) if(resP[z]>entry && (nearest==0 || resP[z]<nearest)) nearest=resP[z];
+            for(int z=0;z<ArraySize(sBot);z++) if(sBot[z]>entry && (nearest==0 || sBot[z]<nearest)) nearest=sBot[z];
+            why=(inDemand?"Demand ":"")+(atSupport?"Support":"");
          }
          else
          {
@@ -509,30 +616,31 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             if(inSupply) structure=MathMax(structure,supplyHigh);
             if(atResistance) structure=MathMax(structure,resistanceHigh);
             stop=AurumSellStop(entry,structure,c.atr,SLBufferATR,MinRiskATR);
-            double risk=stop-entry;
-            // Targets = the next support / demand areas below
-            double below[]; int n=0;
-            ArrayResize(below,ArraySize(supP)+ArraySize(dTop));
-            for(int z=0;z<ArraySize(supP);z++) below[n++]=supP[z];
-            for(int z=0;z<ArraySize(dTop);z++) below[n++]=dTop[z];
-            for(int z=0;z<n;z++) if(below[z]<=entry-risk && below[z]>nearest) nearest=below[z];
-            tp1=AurumSellTP1(entry,stop,nearest);
-            for(int z=0;z<n;z++) if(below[z]<=tp1-0.5*risk && below[z]>nextArea) nextArea=below[z];
-            tp2=AurumSellTP2(entry,stop,tp1,nextArea);
-            Sell[i]=c.high+0.3*c.atr; lastSellK=k;
+            for(int z=0;z<ArraySize(supP);z++) if(supP[z]<entry && supP[z]>nearest) nearest=supP[z];
+            for(int z=0;z<ArraySize(dTop);z++) if(dTop[z]<entry && dTop[z]>nearest) nearest=dTop[z];
+            why=(inSupply?"Supply ":"")+(atResistance?"Resistance":"");
          }
-         sigDir=dir; sigScore=dir>0?buyScore:sellScore; sigWhy=dir>0?buyWhy:sellWhy;
-         sigTime=time[i]; sigEntry=entry; sigSL=stop; sigTP1=tp1; sigTP2=tp2;
-         sigState=1; sigK=k; sigTP1Hit=false; sigResult="Active";
-         string tag=(dir>0?"BUY ":"SELL ")+Stars(sigScore)+" "+sigWhy;
-         Text(prefix+"s"+IntegerToString((long)time[i]),time[i],dir>0?c.low-0.6*c.atr:c.high+0.6*c.atr,tag,
-              dir>0?clrMediumSeaGreen:clrTomato,dir>0?ANCHOR_UPPER:ANCHOR_LOWER);
-         if(i==1)
+         StringTrimRight(why);
+         if(!AurumTarget(dir,entry,stop,nearest,MinReward,tp))
          {
-            latestSignal=dir;
-            latestMessage=StringFormat("Aurum %s %s %s | %s | Entry %s | SL %s | TP1 %s | TP2 %s",
-               dir>0?"BUY":"SELL",Stars(sigScore),_Symbol+" "+EnumToString(_Period),sigWhy,
-               Price(entry),Price(stop),Price(tp1),Price(tp2));
+            skipK=k;
+            skipText=(dir>0?"BUY":"SELL")+" skipped: target only "+DoubleToString(AurumRR(entry,stop,nearest),1)+"R away";
+         }
+         else
+         {
+            inTrade=true; tDir=dir; tK=k; tTime=time[i]; tEntry=entry; tSL=stop; tTP=tp; tWhy=why;
+            tScore=dir>0?buyScore:sellScore;
+            string side=(tScore>=3?"STRONG ":"")+(dir>0?"BUY":"SELL");
+            if(dir>0) Buy[i]=c.low-0.3*c.atr; else Sell[i]=c.high+0.3*c.atr;
+            if(ShowHistory)
+               Text(prefix+"s"+IntegerToString((long)time[i]),time[i],dir>0?c.low-0.6*c.atr:c.high+0.6*c.atr,side,
+                    dir>0?clrMediumSeaGreen:clrTomato,dir>0?ANCHOR_UPPER:ANCHOR_LOWER,9);
+            if(i==1)
+            {
+               latestSignal=dir;
+               latestMessage=StringFormat("Aurum %s %s %s | Entry %s | SL %s | TP %s | RR 1:%.1f | Lot %.2f | %s",
+                  side,_Symbol,TFText(_Period),Price(entry),Price(stop),Price(tp),AurumRR(entry,stop,tp),LotSize(entry,stop),why);
+            }
          }
       }
 
@@ -578,6 +686,10 @@ int OnCalculate(const int rates_total,const int prev_calculated,
          else PushLevel(resP,resT,low[pk],time[pk],mergeTol);
       }
    }
+   int lastK=limit-1;
+   tAge=inTrade?lastK-tK:0;
+   lastAge=lastExitK>=0?lastK-lastExitK:0;
+   skipAge=skipK>=0?lastK-skipK:-1;
 
    // Notify only for a brand-new closed candle (never for history rebuilt at startup)
    bool startup=!primed || reset;

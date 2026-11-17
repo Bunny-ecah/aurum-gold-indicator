@@ -1,6 +1,6 @@
-"""Aurum v5 tests: source contracts for AurumSignalAudit.pine + reference-model behaviour.
+"""Aurum v6 tests: source contracts for AurumSignalAudit.pine + reference-model behaviour.
 
-Run from the repository root:  python tradingview/tests/test_v5.py
+Run from the repository root:  python tradingview/tests/test_tradingview.py
 This is NOT a Pine compiler or TradingView engine test. Compile in Pine Editor as well.
 """
 from pathlib import Path
@@ -10,7 +10,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from model_v5 import POINTS_NEEDED, Settings, run  # noqa: E402
+from model import POINTS_NEEDED, Settings, lots, record, run, target, trade_step  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 PINE = (ROOT / "tradingview" / "AurumSignalAudit.pine").read_text(encoding="utf-8")
@@ -66,7 +66,7 @@ def random_bars(seed, n=2500):
 class PineContract(unittest.TestCase):
     def test_version_and_title(self):
         self.assertTrue(PINE.startswith("//@version=6"))
-        self.assertIn('indicator("Aurum Gold v5', PINE)
+        self.assertIn('indicator("Aurum Gold v6', PINE)
 
     def test_signals_only_on_closed_candles(self):
         self.assertIn("if barstate.isconfirmed and ready\n    float tol", PINE)
@@ -93,6 +93,8 @@ class PineContract(unittest.TestCase):
     def test_no_fibonacci_left(self):
         for source in (PINE, CORE, MQ5):
             self.assertNotIn("fib", source.lower())
+
+    def test_defaults_match_mt5(self):
         for name, value in (("impulseATR", "1.5"), ("slBufferATR", "0.2"), ("minRiskATR", "0.5"), ("maxItems", "4")):
             self.assertRegex(PINE, rf"{name} = input\.(float|int)\({re.escape(value)},")
         for name, value in (("ImpulseATR", "1.5"), ("SLBufferATR", "0.2"), ("MinRiskATR", "0.5"), ("MaxItems", "4")):
@@ -107,7 +109,21 @@ class PineContract(unittest.TestCase):
                 self.assertIn(f"if array.size({name}) > 0", lines[i - 1], line)
 
     def test_inputs_are_few(self):
-        self.assertLessEqual(PINE.count("= input."), 18)
+        self.assertLessEqual(PINE.count("= input."), 16)
+
+    def test_trade_rules_match_core(self):
+        # Target: cap max(3, minRR), fallback max(2, minRR); stop loss checked before target
+        self.assertIn("math.min(rr, math.max(3.0, minRR))", PINE)
+        self.assertIn("math.max(2.0, minRR)", PINE)
+        self.assertIn("AurumMin(rr,AurumMax(3.0,minRR))", CORE)
+        self.assertIn("AurumMax(2.0,minRR)", CORE)
+        self.assertLess(PINE.index("if slHit\n        closedR := -1.0"), PINE.index("else if tpHit"))
+        self.assertLess(CORE.index("if(stopHit)"), CORE.index("if(targetHit)"))
+        self.assertIn("and not inTrade", PINE)
+
+    def test_panel_has_status_and_record(self):
+        for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"LOT SIZE"', '"TAKE PROFIT"'):
+            self.assertIn(text, PINE)
 
 
 class ModelBehaviour(unittest.TestCase):
@@ -119,7 +135,8 @@ class ModelBehaviour(unittest.TestCase):
         self.assertEqual((last.bar, last.side), (len(bars) - 1, 1))
         self.assertIn("Demand", last.why)
         self.assertGreaterEqual(last.score, 2)
-        self.assertTrue(last.sl < 2649.0 < last.entry < last.tp1 < last.tp2)
+        self.assertTrue(last.sl < 2649.0 < last.entry < last.tp)
+        self.assertGreaterEqual((last.tp - last.entry) / (last.entry - last.sl), 1.5)
 
     def test_supply_pullback_gives_sell(self):
         bars = mirror(demand_scenario())
@@ -128,7 +145,7 @@ class ModelBehaviour(unittest.TestCase):
         last = sig[-1]
         self.assertEqual((last.bar, last.side), (len(bars) - 1, -1))
         self.assertIn("Supply", last.why)
-        self.assertTrue(last.sl > last.entry > last.tp1 > last.tp2)
+        self.assertTrue(last.sl > last.entry > last.tp)
 
     def test_trend_blocks_counter_signals(self):
         bars = demand_scenario()
@@ -152,9 +169,11 @@ class ModelBehaviour(unittest.TestCase):
             for mode in POINTS_NEEDED:
                 for s in run(bars, trend, Settings(mode=mode)):
                     if s.side > 0:
-                        self.assertTrue(s.sl < s.entry < s.tp1 < s.tp2, s)
+                        self.assertTrue(s.sl < s.entry < s.tp, s)
                     else:
-                        self.assertTrue(s.sl > s.entry > s.tp1 > s.tp2, s)
+                        self.assertTrue(s.sl > s.entry > s.tp, s)
+                    rr = abs(s.tp - s.entry) / abs(s.entry - s.sl)
+                    self.assertTrue(1.5 - 1e-9 <= rr <= 3 + 1e-9, rr)
 
     def test_mode_frequency(self):
         counts = {}
@@ -164,22 +183,59 @@ class ModelBehaviour(unittest.TestCase):
         self.assertGreater(counts["Balanced"], counts["Strict"])
         self.assertGreater(counts["Strict"], 0)
         per_1000 = counts["Balanced"] / (4 * 2.5)
-        self.assertTrue(5 <= per_1000 <= 60, per_1000)
+        self.assertTrue(2 <= per_1000 <= 40, per_1000)
 
-    def test_cooldown(self):
+    def test_one_trade_at_a_time(self):
         for seed in range(3):
-            bars, trend = random_bars(seed)
-            last = {}
-            for s in run(bars, trend, Settings(mode="Aggressive", cooldown=5)):
-                if s.side in last:
-                    self.assertGreater(s.bar - last[s.side], 5)
-                last[s.side] = s.bar
+            sig = run(*random_bars(seed), Settings(mode="Aggressive"))
+            for a, b in zip(sig, sig[1:]):
+                self.assertIsNotNone(a.exit_bar)
+                self.assertGreaterEqual(b.bar, a.exit_bar)
+
+    def test_every_trade_gets_a_result(self):
+        sig = run(*random_bars(1), Settings(mode="Aggressive"))
+        for s in sig[:-1]:
+            self.assertTrue(s.result == -1.0 or s.result > 0 or s.exit_bar - s.bar >= 100, s)
+        n, wins, pct, avg, total = record(sig)
+        self.assertEqual(n, sum(1 for s in sig if s.result is not None))
+        self.assertAlmostEqual(avg * n, total)
+
+    def test_min_reward_filter(self):
+        counts = [len(run(*random_bars(2), Settings(mode="Aggressive", min_rr=m))) for m in (1.0, 2.0, 3.0)]
+        self.assertGreaterEqual(counts[0], counts[1])
+        self.assertGreaterEqual(counts[1], counts[2])
+
+
+class TradeRules(unittest.TestCase):
+    """Same cases as mt5/tests/core_tests.cpp, so both platforms follow one rule book."""
+
+    def test_target(self):
+        self.assertAlmostEqual(target(1, 2650, 2645, 2660, 1.5), 2660)
+        self.assertIsNone(target(1, 2650, 2645, 2656, 1.5))
+        self.assertAlmostEqual(target(1, 2650, 2645, 2690, 1.5), 2665)
+        self.assertAlmostEqual(target(1, 2650, 2645, None, 1.5), 2660)
+        self.assertAlmostEqual(target(1, 2650, 2645, None, 2.5), 2662.5)
+        self.assertAlmostEqual(target(-1, 2650, 2655, 2640, 1.5), 2640)
+        self.assertIsNone(target(-1, 2650, 2655, 2645, 1.5))
+
+    def test_trade_step(self):
+        self.assertIsNone(trade_step(1, 2650, 2645, 2660, (2650, 2655, 2647, 2652), 1, 100))
+        self.assertAlmostEqual(trade_step(1, 2650, 2645, 2660, (2652, 2661, 2650, 2658), 2, 100), 2.0)
+        self.assertEqual(trade_step(1, 2650, 2645, 2660, (2648, 2649, 2644, 2646), 2, 100), -1.0)
+        self.assertEqual(trade_step(1, 2650, 2645, 2660, (2650, 2662, 2644, 2655), 2, 100), -1.0)
+        self.assertAlmostEqual(trade_step(1, 2650, 2645, 2660, (2650, 2653, 2648, 2652.5), 100, 100), 0.5)
+        self.assertAlmostEqual(trade_step(-1, 2650, 2655, 2640, (2645, 2646, 2639, 2641), 3, 100), 2.0)
+
+    def test_lots(self):
+        self.assertAlmostEqual(lots(1000, 1, 2650, 2645), 0.02)
+        self.assertAlmostEqual(lots(10000, 1, 2650, 2647), 0.33)
+        self.assertEqual(lots(100, 1, 2650, 2645), 0)
 
 
 if __name__ == "__main__":
     result = unittest.main(exit=False, verbosity=1).result
     total = result.testsRun
-    summary = (f"{total} v5 contract/model tests; {len(result.failures)} failures; {len(result.errors)} errors.\n"
+    summary = (f"{total} v6 contract/model tests; {len(result.failures)} failures; {len(result.errors)} errors.\n"
                "Not a Pine compiler or TradingView runtime test.\n")
-    (Path(__file__).resolve().parent / "v5-results.txt").write_text(summary, encoding="utf-8")
+    (Path(__file__).resolve().parent / "test-results.txt").write_text(summary, encoding="utf-8")
     raise SystemExit(0 if result.wasSuccessful() else 1)

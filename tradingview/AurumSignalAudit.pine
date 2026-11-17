@@ -1,39 +1,44 @@
 //@version=6
-indicator("Aurum Gold v5 - SNR + SND", shorttitle="Aurum v5", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=50, max_labels_count=300)
+indicator("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=60, max_labels_count=500)
 
 // =====================================================================
-// AURUM GOLD v5 — easy confluence indicator for XAUUSD (any timeframe)
+// AURUM GOLD v6 — simple supply/demand + support/resistance signals for XAUUSD
 //
 // BUY  = higher-timeframe trend UP
-//        + price dips into key areas: DEMAND zone (2 pts) and/or SUPPORT level (1 pt)
-//        + the candle CLOSES back above the area (bullish candle or long lower wick)
-// SELL = the mirror image (trend DOWN, SUPPLY / RESISTANCE, rejection down)
-// Points needed: Aggressive 1, Balanced 2, Strict 3. Stars on the label = points (max 3).
+//        + price dips into a DEMAND zone (2 pts) and/or SUPPORT level (1 pt)
+//        + the candle CLOSES back above it (bullish candle or long lower wick)
+//        + the target (next resistance/supply) is at least "Minimum reward" x risk away
+// SELL = the mirror image.
+// One trade at a time. The trade closes at TP (+R), SL (-1R) or after 100 candles.
+// Every closed trade goes into the RECORD row, which is a built-in backtest of the rules.
 //
 // Signals are decided on CLOSED candles only, so a printed signal does not disappear.
 // Shared rules with MT5: mt5/AurumCore.mqh. Demo research — not a guaranteed strategy.
 // =====================================================================
 
 // ---------- 1. Signals ----------
-string modeInput = input.string("Balanced", "Signal mode", options=["Balanced", "Strict", "Aggressive"], display=display.none, group="1. Signals", tooltip="Points: Supply/Demand zone = 2, Support/Resistance = 1.\nAggressive: 1 point - any zone or S/R level (most signals).\nBalanced: 2 points - a supply/demand zone (recommended).\nStrict: 3 points - zone + S/R together (fewest, strongest).\nAll modes trade only with the trend.")
-string swingInput = input.string("Normal", "Swing size", options=["Small", "Normal", "Large"], display=display.none, group="1. Signals", tooltip="How big a swing must be to make an S/R level.\nSmall = more levels (scalping). Large = only major levels (swing trading).")
-string htfInput = input.timeframe("", "Trend timeframe (empty = auto)", display=display.none, group="1. Signals", tooltip="Auto: 1m→15m, 5m→1h, 15m-1h→4h, 2h-4h→1D, 1D→1W.")
-int cooldown = input.int(5, "Candles between same-side signals", minval=0, maxval=50, display=display.none, group="1. Signals")
+string modeInput = input.string("Balanced", "Signal mode", options=["Balanced", "Strict", "Aggressive"], display=display.none, group="1. Signals", tooltip="Aggressive: any demand/supply zone or S/R level (most signals).\nBalanced: price must be in a demand/supply zone (recommended).\nStrict: zone AND S/R level together (fewest, strongest).\nAll modes trade only with the trend.")
+string swingInput = input.string("Normal", "Swing size", options=["Small", "Normal", "Large"], display=display.none, group="1. Signals", tooltip="How big a swing must be to make an S/R level.\nSmall = more levels (scalping). Large = only major levels.")
+string htfInput = input.timeframe("", "Trend timeframe (empty = auto)", display=display.none, group="1. Signals", tooltip="Auto: 1m→15m, 5m→1H, 15m-1H→4H, 2H-4H→1D, 1D→1W.")
 
-// ---------- 2. Show on chart ----------
-bool showSR = input.bool(true, "Support / Resistance (SNR)", display=display.none, group="2. Show on chart")
-bool showZones = input.bool(true, "Supply / Demand zones (SND)", display=display.none, group="2. Show on chart")
-bool showTrade = input.bool(true, "Entry / SL / TP of last signal", display=display.none, group="2. Show on chart")
-bool showEMA = input.bool(false, "EMA 50 / 200", display=display.none, group="2. Show on chart")
-bool showPanel = input.bool(true, "Info panel", display=display.none, group="2. Show on chart")
-string panelCorner = input.string("Top right", "Panel position", options=["Top right", "Bottom right", "Top left", "Bottom left"], display=display.none, group="2. Show on chart")
+// ---------- 2. Risk ----------
+float balance = input.float(1000, "Account balance ($)", minval=1, display=display.none, group="2. Risk")
+float riskPct = input.float(1.0, "Risk per trade (%)", minval=0.1, maxval=10, step=0.1, display=display.none, group="2. Risk")
+float minRR = input.float(1.5, "Minimum reward (× risk)", minval=1.0, maxval=5, step=0.1, display=display.none, group="2. Risk", tooltip="Skip a setup when the next opposite zone/level is closer than this.\n1.5 means you must be able to win at least 1.5x what you risk.")
 
-// ---------- 3. Advanced (defaults are fine) ----------
-float impulseATR = input.float(1.5, "Zone impulse: candle body ≥ ATR ×", minval=0.5, maxval=5, step=0.1, display=display.none, group="3. Advanced")
-float slBufferATR = input.float(0.2, "Stop-loss buffer beyond structure (ATR ×)", minval=0, maxval=2, step=0.05, display=display.none, group="3. Advanced")
-float minRiskATR = input.float(0.5, "Minimum stop-loss distance (ATR ×)", minval=0.1, maxval=5, step=0.05, display=display.none, group="3. Advanced")
-int maxItems = input.int(4, "Max zones / levels kept per side", minval=1, maxval=10, display=display.none, group="3. Advanced")
-int atrLength = input.int(14, "ATR period", minval=2, maxval=200, display=display.none, group="3. Advanced")
+// ---------- 3. Display ----------
+bool showAll = input.bool(false, "Show all nearby zones and levels", display=display.none, group="3. Display", tooltip="Off: only the nearest area above and below price (clean chart).")
+bool showHistory = input.bool(true, "Show past signals and results", display=display.none, group="3. Display")
+string panelCorner = input.string("Top right", "Panel position", options=["Top right", "Bottom right", "Top left", "Bottom left"], display=display.none, group="3. Display")
+
+// ---------- 4. Advanced (defaults are fine) ----------
+float impulseATR = input.float(1.5, "Zone impulse: candle body ≥ ATR ×", minval=0.5, maxval=5, step=0.1, display=display.none, group="4. Advanced")
+float slBufferATR = input.float(0.2, "Stop-loss buffer beyond the area (ATR ×)", minval=0, maxval=2, step=0.05, display=display.none, group="4. Advanced")
+float minRiskATR = input.float(0.5, "Minimum stop-loss distance (ATR ×)", minval=0.1, maxval=5, step=0.05, display=display.none, group="4. Advanced")
+int maxItems = input.int(4, "Max zones / levels kept per side", minval=1, maxval=10, display=display.none, group="4. Advanced")
+int atrLength = input.int(14, "ATR period", minval=2, maxval=200, display=display.none, group="4. Advanced")
+int maxBars = input.int(100, "Close a trade after (candles)", minval=5, maxval=500, display=display.none, group="4. Advanced")
+float contractSize = input.float(100, "Contract size (oz per 1 lot)", minval=1, display=display.none, group="4. Advanced", tooltip="XAUUSD standard lot = 100 oz on most brokers. Check yours.")
 
 // Fixed rule constants (same values as mt5/AurumCore.mqh)
 float TOUCH_ATR = 0.2      // how close counts as "touching" an area
@@ -47,7 +52,6 @@ string htf = htfInput == "" ? autoHTF : htfInput
 // ---------- Market data ----------
 float atrNow = ta.atr(atrLength)
 float atrPrev = atrNow[1]          // previous candle's ATR: a big candle cannot inflate its own limits
-float ema50 = ta.ema(close, 50)
 float ema200 = ta.ema(close, 200)
 // Completed higher-timeframe candle only ([1] + lookahead_on): no repainting.
 [htfClose, htfEMA] = request.security(syminfo.tickerid, htf, [close[1], ta.ema(close, 200)[1]], lookahead=barmerge.lookahead_on)
@@ -102,8 +106,30 @@ f_addZone(array<float> tops, array<float> bots, array<int> bars, float top, floa
         array.shift(bars)
     0
 
+// Target = next opposite area, capped at max(3, minRR) R; none -> max(2, minRR) R.
+// Returns na when that area is closer than minRR (not worth the risk). Same as AurumTarget().
+f_target(int dir, float entry, float stop, float nearest) =>
+    float risk = math.abs(entry - stop)
+    float tp = na
+    if risk > 0
+        if not na(nearest) and (nearest - entry) * dir > 0
+            float rr = (nearest - entry) * dir / risk
+            tp := rr >= minRR ? entry + dir * math.min(rr, math.max(3.0, minRR)) * risk : na
+        else
+            tp := entry + dir * math.max(2.0, minRR) * risk
+    tp
+
+// Lot size rounded DOWN to 0.01. Same as AurumLots().
+f_lots(float entry, float stop) =>
+    float dist = math.abs(entry - stop)
+    dist > 0 ? math.floor(balance * riskPct / 100 / (dist * contractSize) * 100 + 1e-9) / 100.0 : 0.0
+
 f_price(float p) => na(p) ? "--" : str.tostring(p, format.mintick)
-f_stars(int n) => n >= 3 ? "★★★" : n == 2 ? "★★" : "★"
+f_r(float r) => (r >= 0 ? "+" : "") + str.tostring(r, "#.##") + "R"
+f_money(float m) => "$" + str.tostring(m, "#,##0.##")
+f_tf(string tf) =>
+    float n = str.tonumber(tf)
+    na(n) ? (str.length(tf) == 1 ? "1" + tf : tf) : n >= 60 and n % 60 == 0 ? str.tostring(n / 60, "#") + "H" : tf + "m"
 
 // ---------- State (updated only on CLOSED candles) ----------
 var array<float> resP = array.new<float>()
@@ -116,43 +142,53 @@ var array<int> dBar = array.new<int>()
 var array<float> sTop = array.new<float>()
 var array<float> sBot = array.new<float>()
 var array<int> sBar = array.new<int>()
-var int lastBuyBar = na
-var int lastSellBar = na
-var int sigDir = 0
-var int sigBar = na
-var int sigScore = 0
-var float sigEntry = na
-var float sigSL = na
-var float sigTP1 = na
-var float sigTP2 = na
-var string areaText = "--"
-var int sigState = 0          // 0 none, 1 active, 2 finished
-var string sigResult = ""
-var bool sigTP1Hit = false
+// Open trade
+var bool inTrade = false
+var int tDir = 0
+var int tBar = na
+var int tScore = 0
+var float tEntry = na
+var float tSL = na
+var float tTP = na
+var string tWhy = ""
+// Record of closed trades (R multiples) — the built-in backtest
+var array<float> results = array.new<float>()
+var int lastDir = 0
+var int lastExitBar = na
+var float lastR = na
+var string lastHow = ""
+var int skipBar = na
+var string skipText = ""
 
-
-// ---------- 0) Follow the active trade: SL / TP hit or expired ----------
-if barstate.isconfirmed and sigState == 1 and bar_index > sigBar
-    bool slHit = sigDir > 0 ? low <= sigSL : high >= sigSL
-    bool tp2Hit = sigDir > 0 ? high >= sigTP2 : low <= sigTP2
-    sigTP1Hit := sigTP1Hit or (sigDir > 0 ? high >= sigTP1 : low <= sigTP1)
+// ---------- 0) Follow the open trade: SL / TP / time limit ----------
+float closedR = na
+if barstate.isconfirmed and inTrade and bar_index > tBar
+    float risk = math.abs(tEntry - tSL)
+    bool slHit = tDir > 0 ? low <= tSL : high >= tSL
+    bool tpHit = tDir > 0 ? high >= tTP : low <= tTP
+    // Stop loss first: a candle touching both SL and TP counts as a LOSS (conservative)
     if slHit
-        sigState := 2
-        sigResult := sigTP1Hit ? "TP1 hit, then SL" : "SL hit"
-    else if tp2Hit
-        sigState := 2
-        sigResult := "TP2 hit"
-    else if bar_index - sigBar >= 100
-        sigState := 2
-        sigResult := sigTP1Hit ? "TP1 hit, expired" : "Expired"
+        closedR := -1.0
+        lastHow := "SL"
+    else if tpHit
+        closedR := math.abs(tTP - tEntry) / risk
+        lastHow := "TP"
+    else if bar_index - tBar >= maxBars
+        closedR := (close - tEntry) * tDir / risk
+        lastHow := "Time exit"
+    if not na(closedR)
+        inTrade := false
+        array.push(results, closedR)
+        lastDir := tDir
+        lastExitBar := bar_index
+        lastR := closedR
+        if showHistory
+            color rc = closedR > 0 ? color.teal : closedR < 0 ? color.red : color.gray
+            label.new(bar_index, tDir > 0 ? high : low, lastHow + " " + f_r(closedR), yloc=tDir > 0 ? yloc.abovebar : yloc.belowbar, style=label.style_none, textcolor=rc, size=size.small)
 
 // ---------- 1) Evaluate this closed candle against EXISTING areas ----------
 bool buySignal = false
 bool sellSignal = false
-int buyScore = 0
-int sellScore = 0
-string buyWhy = ""
-string sellWhy = ""
 if barstate.isconfirmed and ready
     float tol = TOUCH_ATR * atrPrev
     // SND
@@ -185,72 +221,65 @@ if barstate.isconfirmed and ready
             resistanceHigh := na(resistanceHigh) ? p : math.max(resistanceHigh, p)
 
     // Points: a supply/demand zone counts double
-    buyScore := (inDemand ? 2 : 0) + (atSupport ? 1 : 0)
-    sellScore := (inSupply ? 2 : 0) + (atResistance ? 1 : 0)
-    buyWhy := str.trim((inDemand ? "Demand " : "") + (atSupport ? "Support" : ""))
-    sellWhy := str.trim((inSupply ? "Supply " : "") + (atResistance ? "Resistance" : ""))
-    areaText := buyScore > 0 and sellScore > 0 ? buyWhy + " / " + sellWhy : buyScore > 0 ? buyWhy + " (buy area)" : sellScore > 0 ? sellWhy + " (sell area)" : "No key area"
-
+    int buyScore = (inDemand ? 2 : 0) + (atSupport ? 1 : 0)
+    int sellScore = (inSupply ? 2 : 0) + (atResistance ? 1 : 0)
     int need = modeInput == "Strict" ? 3 : modeInput == "Aggressive" ? 1 : 2
     bool buyRaw = f_bullRejection(open, high, low, close) and buyScore >= need and trendDir > 0
     bool sellRaw = f_bearRejection(open, high, low, close) and sellScore >= need and trendDir < 0
-    buySignal := buyRaw and not sellRaw and (na(lastBuyBar) or bar_index - lastBuyBar > cooldown)
-    sellSignal := sellRaw and not buyRaw and (na(lastSellBar) or bar_index - lastSellBar > cooldown)
 
-    if buySignal or sellSignal
+    if (buyRaw or sellRaw) and not (buyRaw and sellRaw) and not inTrade    // one trade at a time
+        int dir = buyRaw ? 1 : -1
         float entry = close
         float sl = na
         float nearest = na
-        float nextArea = na
-        if buySignal
+        if dir > 0
             float structure = low
             structure := inDemand ? math.min(structure, demandLow) : structure
             structure := atSupport ? math.min(structure, supportLow) : structure
             sl := math.min(structure - slBufferATR * atrPrev, entry - minRiskATR * atrPrev)
-            float risk = entry - sl
-            // Targets = the next resistance / supply areas above
-            array<float> targets = array.concat(array.copy(resP), array.copy(sBot))
-            for p in targets
-                if p >= entry + risk
+            for p in resP
+                if p > entry
                     nearest := na(nearest) ? p : math.min(nearest, p)
-            sigTP1 := not na(nearest) ? nearest : entry + 1.5 * risk
-            for p in targets
-                if p >= sigTP1 + 0.5 * risk
-                    nextArea := na(nextArea) ? p : math.min(nextArea, p)
-            sigTP2 := not na(nextArea) ? nextArea : sigTP1 + risk
-            lastBuyBar := bar_index
+            for p in sBot
+                if p > entry
+                    nearest := na(nearest) ? p : math.min(nearest, p)
         else
             float structure = high
             structure := inSupply ? math.max(structure, supplyHigh) : structure
             structure := atResistance ? math.max(structure, resistanceHigh) : structure
             sl := math.max(structure + slBufferATR * atrPrev, entry + minRiskATR * atrPrev)
-            float risk = sl - entry
-            // Targets = the next support / demand areas below
-            array<float> targets = array.concat(array.copy(supP), array.copy(dTop))
-            for p in targets
-                if p <= entry - risk
+            for p in supP
+                if p < entry
                     nearest := na(nearest) ? p : math.max(nearest, p)
-            sigTP1 := not na(nearest) ? nearest : entry - 1.5 * risk
-            for p in targets
-                if p <= sigTP1 - 0.5 * risk
-                    nextArea := na(nextArea) ? p : math.max(nextArea, p)
-            sigTP2 := not na(nextArea) ? nextArea : sigTP1 - risk
-            lastSellBar := bar_index
-        sigDir := buySignal ? 1 : -1
-        sigBar := bar_index
-        sigState := 1
-        sigResult := "Active"
-        sigTP1Hit := false
-        sigScore := buySignal ? buyScore : sellScore
-        sigEntry := entry
-        sigSL := sl
-        string why = buySignal ? buyWhy : sellWhy
-        string tag = (buySignal ? "BUY " : "SELL ") + f_stars(sigScore) + "\n" + why
-        if buySignal
-            label.new(bar_index, low, tag, yloc=yloc.belowbar, style=label.style_label_up, color=color.new(color.teal, 0), textcolor=color.white, size=size.small)
+            for p in dTop
+                if p < entry
+                    nearest := na(nearest) ? p : math.max(nearest, p)
+        float tp = f_target(dir, entry, sl, nearest)
+        string why = dir > 0 ? str.trim((inDemand ? "Demand " : "") + (atSupport ? "Support" : "")) : str.trim((inSupply ? "Supply " : "") + (atResistance ? "Resistance" : ""))
+        if na(tp)
+            skipBar := bar_index
+            skipText := (dir > 0 ? "BUY" : "SELL") + " skipped: target only " + str.tostring(math.abs(nearest - entry) / math.abs(entry - sl), "#.#") + "R away"
         else
-            label.new(bar_index, high, tag, yloc=yloc.abovebar, style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
-        alert((buySignal ? "Aurum BUY " : "Aurum SELL ") + f_stars(sigScore) + " | " + syminfo.ticker + " " + timeframe.period + " | " + why + " | Entry " + f_price(sigEntry) + " | SL " + f_price(sigSL) + " | TP1 " + f_price(sigTP1) + " | TP2 " + f_price(sigTP2), alert.freq_once_per_bar_close)
+            buySignal := dir > 0
+            sellSignal := dir < 0
+            inTrade := true
+            tDir := dir
+            tBar := bar_index
+            tScore := dir > 0 ? buyScore : sellScore
+            tEntry := entry
+            tSL := sl
+            tTP := tp
+            tWhy := why
+            float rr = math.abs(tp - entry) / math.abs(entry - sl)
+            float lot = f_lots(entry, sl)
+            string side = (tScore >= 3 ? "STRONG " : "") + (dir > 0 ? "BUY" : "SELL")
+            string plan = "Entry " + f_price(entry) + "\nSL " + f_price(sl) + "\nTP " + f_price(tp) + "\nRR 1 : " + str.tostring(rr, "#.#") + "\nWhy: " + why
+            if showHistory
+                if dir > 0
+                    label.new(bar_index, low, side, yloc=yloc.belowbar, style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.small, tooltip=plan)
+                else
+                    label.new(bar_index, high, side, yloc=yloc.abovebar, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small, tooltip=plan)
+            alert("Aurum " + side + " " + syminfo.ticker + " " + f_tf(timeframe.period) + " | Entry " + f_price(entry) + " | SL " + f_price(sl) + " | TP " + f_price(tp) + " | RR 1:" + str.tostring(rr, "#.#") + " | Lot " + str.tostring(lot, "#.##") + " | " + why, alert.freq_once_per_bar_close)
 
 // ---------- 2) Update areas with this closed candle ----------
 if barstate.isconfirmed and ready
@@ -316,25 +345,87 @@ if barstate.isconfirmed and ready
         else
             f_addLevel(resP, resB, pl, bar_index - pivotLen, mergeTol, maxItems)
 
-// ---------- Plots, data window and alerts ----------
-plot(showEMA ? ema50 : na, "EMA 50", color=color.orange, linewidth=1, display=display.pane)
-plot(showEMA ? ema200 : na, "EMA 200", color=color.gray, linewidth=2, display=display.pane)
+// ---------- Data window (for checking / exporting results) and alerts ----------
 plot(buySignal ? 1 : sellSignal ? -1 : 0, "Signal: BUY=1 SELL=-1", display=display.data_window)
-plot(buySignal ? buyScore : sellSignal ? sellScore : 0, "Signal stars", display=display.data_window)
+plot(closedR, "Trade result (R)", display=display.data_window)
 plot(trendDir, "Trend: UP=1 DOWN=-1", display=display.data_window)
-alertcondition(buySignal, title="Aurum BUY", message="Aurum BUY | {{ticker}} {{interval}} | close {{close}} | check Entry/SL/TP on chart")
-alertcondition(sellSignal, title="Aurum SELL", message="Aurum SELL | {{ticker}} {{interval}} | close {{close}} | check Entry/SL/TP on chart")
-alertcondition(buySignal or sellSignal, title="Aurum BUY or SELL", message="Aurum signal | {{ticker}} {{interval}} | close {{close}} | check direction and Entry/SL/TP on chart")
+alertcondition(buySignal, title="Aurum BUY", message="Aurum BUY | {{ticker}} {{interval}} | close {{close}} | see Entry/SL/TP on chart")
+alertcondition(sellSignal, title="Aurum SELL", message="Aurum SELL | {{ticker}} {{interval}} | close {{close}} | see Entry/SL/TP on chart")
+alertcondition(buySignal or sellSignal, title="Aurum BUY or SELL", message="Aurum signal | {{ticker}} {{interval}} | close {{close}} | see Entry/SL/TP on chart")
+
+// ---------- Nearest areas ----------
+// Nearest SELL area above price: supply zone or resistance. Returns [kind, top, bottom, startBar];
+// kind 0 = none, 1 = zone, 2 = level.
+f_areaAbove() =>
+    int kind = 0
+    float top = na
+    float bot = na
+    int start = na
+    float best = na
+    for [i, t] in sTop
+        float b = array.get(sBot, i)
+        float d = math.max(0, b - close)
+        if t >= close and (na(best) or d < best)
+            best := d
+            kind := 1
+            top := t
+            bot := b
+            start := array.get(sBar, i)
+    for [i, p] in resP
+        float d = p - close
+        if d > 0 and (na(best) or d < best)
+            best := d
+            kind := 2
+            top := p
+            bot := p
+            start := array.get(resB, i)
+    [kind, top, bot, start]
+
+// Nearest BUY area below price: demand zone or support.
+f_areaBelow() =>
+    int kind = 0
+    float top = na
+    float bot = na
+    int start = na
+    float best = na
+    for [i, t] in dTop
+        float b = array.get(dBot, i)
+        float d = math.max(0, close - t)
+        if b <= close and (na(best) or d < best)
+            best := d
+            kind := 1
+            top := t
+            bot := b
+            start := array.get(dBar, i)
+    for [i, p] in supP
+        float d = close - p
+        if d > 0 and (na(best) or d < best)
+            best := d
+            kind := 2
+            top := p
+            bot := p
+            start := array.get(supB, i)
+    [kind, top, bot, start]
+
+f_areaText(int kind, float top, float bot, bool above) =>
+    kind == 1 ? (above ? "Supply " : "Demand ") + f_price(bot) + " – " + f_price(top) : kind == 2 ? (above ? "Resistance " : "Support ") + f_price(top) : "none nearby"
 
 // ---------- Drawings (rebuilt on the last bar only) ----------
 var array<line> drawLines = array.new<line>()
 var array<box> drawBoxes = array.new<box>()
 var array<label> drawLabels = array.new<label>()
-color DEMAND_COLOR = color.teal
-color SUPPLY_COLOR = color.red
-// Only areas near current price are drawn, so old far-away levels do not squash the chart.
-float nearRange = 8 * nz(atrNow, 0)
-f_near(float p) => math.abs(p - close) <= nearRange
+color BUY_COLOR = color.teal
+color SELL_COLOR = color.red
+
+f_drawZone(int start, float top, float bot, int rightX, bool supply) =>
+    color c = supply ? SELL_COLOR : BUY_COLOR
+    array.push(drawBoxes, box.new(start, top, rightX, bot, border_color=color.new(c, 40), bgcolor=color.new(c, 82), text=supply ? "Supply" : "Demand", text_size=size.tiny, text_color=c, text_halign=text.align_right))
+
+f_drawLevel(int start, float p, int rightX, bool resistance) =>
+    color c = resistance ? SELL_COLOR : BUY_COLOR
+    array.push(drawLines, line.new(start, p, rightX, p, color=color.new(c, 20), width=1, style=line.style_dashed))
+    array.push(drawLabels, label.new(rightX, p, (resistance ? "R " : "S ") + f_price(p), style=label.style_label_left, color=color.new(c, 30), textcolor=color.white, size=size.tiny))
+
 if barstate.islast
     for item in drawLines
         line.delete(item)
@@ -346,37 +437,45 @@ if barstate.islast
     array.clear(drawBoxes)
     array.clear(drawLabels)
     int rightX = bar_index + 12
-    if showZones
+    if showAll
+        // Everything within 8 ATR of price, on the correct side of price
+        float range8 = 8 * nz(atrNow, 0)
         for [i, top] in dTop
             float bot = array.get(dBot, i)
-            // A demand zone must be at or below price; anything else is stale
-            if (f_near(top) or f_near(bot)) and bot <= close
-                array.push(drawBoxes, box.new(array.get(dBar, i), top, rightX, bot, border_color=color.new(DEMAND_COLOR, 40), bgcolor=color.new(DEMAND_COLOR, 82), text="Demand", text_size=size.tiny, text_color=color.new(DEMAND_COLOR, 0), text_halign=text.align_right))
+            if bot <= close and close - top <= range8
+                f_drawZone(array.get(dBar, i), top, bot, rightX, false)
         for [i, top] in sTop
             float bot = array.get(sBot, i)
-            // A supply zone must be at or above price; anything else is stale
-            if (f_near(top) or f_near(bot)) and top >= close
-                array.push(drawBoxes, box.new(array.get(sBar, i), top, rightX, bot, border_color=color.new(SUPPLY_COLOR, 40), bgcolor=color.new(SUPPLY_COLOR, 82), text="Supply", text_size=size.tiny, text_color=color.new(SUPPLY_COLOR, 0), text_halign=text.align_right))
-    if showSR
+            if top >= close and bot - close <= range8
+                f_drawZone(array.get(sBar, i), top, bot, rightX, true)
         for [i, p] in supP
-            if f_near(p)
-                array.push(drawLines, line.new(array.get(supB, i), p, rightX, p, color=color.new(DEMAND_COLOR, 20), width=1, style=line.style_dashed))
-                array.push(drawLabels, label.new(rightX, p, "S " + f_price(p), style=label.style_label_left, color=color.new(DEMAND_COLOR, 30), textcolor=color.white, size=size.tiny))
+            if p < close and close - p <= range8
+                f_drawLevel(array.get(supB, i), p, rightX, false)
         for [i, p] in resP
-            if f_near(p)
-                array.push(drawLines, line.new(array.get(resB, i), p, rightX, p, color=color.new(SUPPLY_COLOR, 20), width=1, style=line.style_dashed))
-                array.push(drawLabels, label.new(rightX, p, "R " + f_price(p), style=label.style_label_left, color=color.new(SUPPLY_COLOR, 30), textcolor=color.white, size=size.tiny))
-    // Trade lines only while the trade is still active (not SL / TP2 / expired)
-    if showTrade and sigState == 1 and not na(sigBar)
-        array<float> values = array.from(sigEntry, sigSL, sigTP1, sigTP2)
-        array<string> names = array.from(sigDir > 0 ? "BUY entry" : "SELL entry", "Stop loss", "TP1", "TP2")
-        for i = 0 to 3
-            float p = array.get(values, i)
-            color c = i == 0 ? color.blue : i == 1 ? color.red : color.green
-            array.push(drawLines, line.new(sigBar, p, bar_index + 4, p, color=c, width=2))
-            array.push(drawLabels, label.new(bar_index + 4, p, array.get(names, i) + "  " + f_price(p), style=label.style_label_left, color=c, textcolor=color.white, size=size.tiny))
+            if p > close and p - close <= range8
+                f_drawLevel(array.get(resB, i), p, rightX, true)
+    else
+        // Clean chart: only the nearest area above and the nearest area below
+        [kA, tA, bA, sA] = f_areaAbove()
+        [kB, tB, bB, sB] = f_areaBelow()
+        if kA == 1
+            f_drawZone(sA, tA, bA, rightX, true)
+        else if kA == 2
+            f_drawLevel(sA, tA, rightX, true)
+        if kB == 1
+            f_drawZone(sB, tB, bB, rightX, false)
+        else if kB == 2
+            f_drawLevel(sB, tB, rightX, false)
+    // Open trade: red risk box and green reward box, like TradingView's position tool
+    if inTrade
+        int x2 = bar_index + 6
+        array.push(drawBoxes, box.new(tBar, math.max(tEntry, tSL), x2, math.min(tEntry, tSL), border_color=color.new(SELL_COLOR, 60), bgcolor=color.new(SELL_COLOR, 85)))
+        array.push(drawBoxes, box.new(tBar, math.max(tEntry, tTP), x2, math.min(tEntry, tTP), border_color=color.new(BUY_COLOR, 60), bgcolor=color.new(BUY_COLOR, 85)))
+        array.push(drawLabels, label.new(x2, tTP, "TP " + f_price(tTP), style=label.style_label_left, color=BUY_COLOR, textcolor=color.white, size=size.tiny))
+        array.push(drawLabels, label.new(x2, tEntry, (tDir > 0 ? "BUY " : "SELL ") + f_price(tEntry), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.tiny))
+        array.push(drawLabels, label.new(x2, tSL, "SL " + f_price(tSL), style=label.style_label_left, color=SELL_COLOR, textcolor=color.white, size=size.tiny))
 
-// ---------- Info panel ----------
+// ---------- Panel ----------
 string panelPosition = switch panelCorner
     "Top left" => position.top_left
     "Bottom left" => position.bottom_left
@@ -384,22 +483,57 @@ string panelPosition = switch panelCorner
     => position.top_right
 var table panel = table.new(panelPosition, 2, 9, bgcolor=color.new(chart.bg_color, 5), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
 f_row(int row, string name, string value, color valueColor) =>
-    table.cell(panel, 0, row, name, text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
+    table.cell(panel, 0, row, name, text_color=color.gray, text_size=size.small, text_halign=text.align_left)
     table.cell(panel, 1, row, value, text_color=valueColor, text_size=size.small, text_halign=text.align_left)
-if barstate.islast and showPanel
-    string trendText = trendDir > 0 ? "UP ▲  (look for BUY)" : trendDir < 0 ? "DOWN ▼  (look for SELL)" : "FLAT  (wait)"
-    color trendColor = trendDir > 0 ? color.teal : trendDir < 0 ? color.red : color.gray
-    string lastText = sigDir == 0 ? "None yet" : (sigDir > 0 ? "BUY " : "SELL ") + f_stars(sigScore) + "  " + str.tostring(bar_index - sigBar) + " bars ago - " + (sigState == 1 ? "ACTIVE" : sigResult)
-    bool active = sigState == 1
-    color lastColor = sigDir > 0 ? color.teal : sigDir < 0 ? color.red : chart.fg_color
-    string nextText = trendDir > 0 ? "Wait: dip into Demand / Support + bullish close" : trendDir < 0 ? "Wait: rally into Supply / Resistance + bearish close" : "Trend flat: no signals until it turns"
-    table.cell(panel, 0, 0, "AURUM GOLD v5", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
-    table.cell(panel, 1, 0, timeframe.period + " chart | trend TF " + htf, text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
-    f_row(1, "Trend", trendText, trendColor)
-    f_row(2, "Mode", modeInput, chart.fg_color)
-    f_row(3, "Price at", areaText, chart.fg_color)
-    f_row(4, "Last signal", lastText, lastColor)
-    f_row(5, "Entry", active ? f_price(sigEntry) : "--  (no active trade)", color.blue)
-    f_row(6, "Stop loss", active ? f_price(sigSL) : "--", color.red)
-    f_row(7, "TP1 / TP2", active ? f_price(sigTP1) + "  /  " + f_price(sigTP2) + (sigTP1Hit ? "  (TP1 hit)" : "") : "--", color.green)
-    f_row(8, "Next", nextText, chart.fg_color)
+
+if barstate.islast
+    table.clear(panel, 0, 0, 1, 8)
+    color fg = chart.fg_color
+    // Header and trend
+    table.cell(panel, 0, 0, "AURUM GOLD", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
+    table.cell(panel, 1, 0, syminfo.ticker + " " + f_tf(timeframe.period) + "  ·  trend " + f_tf(htf), text_color=fg, text_size=size.small, text_halign=text.align_left)
+    string trendText = trendDir > 0 ? "UP ▲   only BUY" : trendDir < 0 ? "DOWN ▼   only SELL" : "FLAT   no trades"
+    f_row(1, "TREND", trendText, trendDir > 0 ? BUY_COLOR : trendDir < 0 ? SELL_COLOR : color.gray)
+    // Status: the one thing to look at
+    int age = inTrade ? bar_index - tBar : na
+    string status = inTrade ? (age <= 1 ? (tDir > 0 ? "BUY NOW" : "SELL NOW") : (tDir > 0 ? "IN BUY TRADE" : "IN SELL TRADE")) : "WAIT"
+    color statusBg = inTrade ? (tDir > 0 ? BUY_COLOR : SELL_COLOR) : color.gray
+    table.cell(panel, 0, 2, "STATUS", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(panel, 1, 2, status, text_color=color.white, bgcolor=statusBg, text_size=size.large, text_halign=text.align_center)
+    if inTrade
+        float risk = math.abs(tEntry - tSL)
+        float rr = math.abs(tTP - tEntry) / risk
+        float lot = f_lots(tEntry, tSL)
+        float riskMoney = balance * riskPct / 100
+        f_row(3, "ENTRY", f_price(tEntry) + (age > 1 ? "   (" + str.tostring(age) + " candles ago)" : ""), color.blue)
+        f_row(4, "STOP LOSS", f_price(tSL), SELL_COLOR)
+        f_row(5, "TAKE PROFIT", f_price(tTP) + "   RR 1 : " + str.tostring(rr, "#.#"), BUY_COLOR)
+        f_row(6, "LOT SIZE", lot > 0 ? str.tostring(lot, "#.##") + " lot  =  risk " + f_money(riskMoney) + " (" + str.tostring(riskPct) + "%)" : "0.01 lot risks " + f_money(0.01 * risk * contractSize) + " – more than your " + str.tostring(riskPct) + "%", lot > 0 ? fg : color.orange)
+    else
+        [kA, tA, bA, sA] = f_areaAbove()
+        [kB, tB, bB, sB] = f_areaBelow()
+        string nextText = trendDir > 0 ? (kB == 0 ? "No buy area below – wait" : "Wait for a dip into " + f_areaText(kB, tB, bB, false) + ", then a bullish candle") : trendDir < 0 ? (kA == 0 ? "No sell area above – wait" : "Wait for a rally into " + f_areaText(kA, tA, bA, true) + ", then a bearish candle") : "Trend is flat – no trades until it turns"
+        f_row(3, "NEXT", nextText, fg)
+        if not na(skipBar) and bar_index - skipBar <= 10
+            f_row(4, "NOTE", skipText, color.orange)
+        string lastText = na(lastExitBar) ? "No closed trades yet" : (lastDir > 0 ? "BUY → " : "SELL → ") + lastHow + " " + f_r(lastR) + "   (" + str.tostring(bar_index - lastExitBar) + " candles ago)"
+        f_row(5, "LAST TRADE", lastText, na(lastR) ? fg : lastR > 0 ? BUY_COLOR : SELL_COLOR)
+    // Record = built-in backtest on the loaded history
+    int n = array.size(results)
+    if n > 0
+        int wins = 0
+        float total = 0.0
+        int wins20 = 0
+        float total20 = 0.0
+        int first20 = math.max(0, n - 20)
+        for [i, r] in results
+            wins += r > 0 ? 1 : 0
+            total += r
+            if i >= first20
+                wins20 += r > 0 ? 1 : 0
+                total20 += r
+        int n20 = n - first20
+        f_row(7, "RECORD", str.tostring(n) + " trades  ·  " + str.tostring(100.0 * wins / n, "#") + "% win  ·  avg " + f_r(total / n) + "  ·  total " + f_r(total), total >= 0 ? BUY_COLOR : SELL_COLOR)
+        f_row(8, "LAST " + str.tostring(n20), str.tostring(100.0 * wins20 / n20, "#") + "% win  ·  total " + f_r(total20), total20 >= 0 ? BUY_COLOR : SELL_COLOR)
+    else
+        f_row(7, "RECORD", "No closed trades in the loaded history yet", fg)

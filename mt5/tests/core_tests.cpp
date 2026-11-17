@@ -105,7 +105,6 @@ AURUM_EXPORT int RunTests()
    Check(AurumDecide(AURUM_AGGRESSIVE,1,true,1,false,0)==1,"aggressive BUY: 1 point");
    Check(AurumDecide(AURUM_AGGRESSIVE,-1,true,1,false,0)==0,"aggressive still follows trend");
    Check(AurumDecide(AURUM_AGGRESSIVE,1,true,1,true,1)==1,"trend picks the side when both areas touched");
-   Check(AurumCooldownOK(10,-1,5) && !AurumCooldownOK(10,5,5) && AurumCooldownOK(11,5,5),"cooldown");
 
    // --- Stops and targets
    double sl=AurumBuyStop(2655,2649,4,0.2,0.5);
@@ -116,16 +115,33 @@ AURUM_EXPORT int RunTests()
    Check(Near(sl,2653.8),"SELL stop above structure + buffer");
    sl=AurumSellStop(2650,2650.1,4,0.2,0.5);
    Check(Near(sl,2652),"SELL stop respects minimum risk");
-   Check(Near(AurumBuyTP1(2650,2645,2660),2660),"BUY TP1 = nearest resistance/supply");
-   Check(Near(AurumBuyTP1(2650,2645,0),2657.5),"BUY TP1 fallback 1.5R");
-   Check(Near(AurumBuyTP2(2650,2645,2660,2670),2670),"BUY TP2 = next area");
-   Check(Near(AurumBuyTP2(2650,2645,2660,2661),2665),"BUY TP2 area too close -> TP1 + 1R");
-   Check(Near(AurumBuyTP2(2650,2645,2660,0),2665),"BUY TP2 fallback TP1 + 1R");
-   Check(Near(AurumSellTP1(2650,2655,2640),2640),"SELL TP1 = nearest support/demand");
-   Check(Near(AurumSellTP1(2650,2655,0),2642.5),"SELL TP1 fallback 1.5R");
-   Check(Near(AurumSellTP1(2650,2655,2647),2642.5),"SELL area closer than 1R ignored");
-   Check(Near(AurumSellTP2(2650,2655,2640,2630),2630),"SELL TP2 = next area");
-   Check(Near(AurumSellTP2(2650,2655,2640,0),2635),"SELL TP2 fallback TP1 - 1R");
+   double tp=0,r=0;
+   Check(AurumTarget(1,2650,2645,2660,1.5,tp) && Near(tp,2660),"BUY TP = next resistance (2R)");
+   Check(!AurumTarget(1,2650,2645,2656,1.5,tp),"BUY skipped: resistance only 1.2R away");
+   Check(AurumTarget(1,2650,2645,2690,1.5,tp) && Near(tp,2665),"BUY TP capped at 3R");
+   Check(AurumTarget(1,2650,2645,0,1.5,tp) && Near(tp,2660),"BUY no area -> 2R");
+   Check(AurumTarget(1,2650,2645,2640,1.5,tp) && Near(tp,2660),"area below a BUY is ignored");
+   Check(AurumTarget(1,2650,2645,0,2.5,tp) && Near(tp,2662.5),"fallback never below minRR");
+   Check(AurumTarget(-1,2650,2655,2640,1.5,tp) && Near(tp,2640),"SELL TP = next support");
+   Check(!AurumTarget(-1,2650,2655,2645,1.5,tp),"SELL skipped: support only 1R away");
+   Check(AurumTarget(-1,2650,2655,0,1.5,tp) && Near(tp,2640),"SELL no area -> 2R");
+   Check(!AurumTarget(1,2650,2650,0,1.5,tp),"zero risk rejected");
+   Check(Near(AurumRR(2650,2645,2660),2.0) && Near(AurumRR(2650,2655,2642.5),1.5),"reward to risk");
+
+   // --- Trade record
+   Check(!AurumTradeStep(1,2650,2645,2660,C(2650,2655,2647,2652),1,100,r),"BUY still open");
+   Check(AurumTradeStep(1,2650,2645,2660,C(2652,2661,2650,2658),2,100,r) && Near(r,2.0),"BUY TP hit = +2R");
+   Check(AurumTradeStep(1,2650,2645,2660,C(2648,2649,2644,2646),2,100,r) && Near(r,-1.0),"BUY SL hit = -1R");
+   Check(AurumTradeStep(1,2650,2645,2660,C(2650,2662,2644,2655),2,100,r) && Near(r,-1.0),"SL and TP in one candle = loss");
+   Check(AurumTradeStep(1,2650,2645,2660,C(2650,2653,2648,2652.5),100,100,r) && Near(r,0.5),"expired at close +0.5R");
+   Check(AurumTradeStep(-1,2650,2655,2640,C(2645,2646,2639,2641),3,100,r) && Near(r,2.0),"SELL TP hit = +2R");
+   Check(AurumTradeStep(-1,2650,2655,2640,C(2652,2656,2651,2654),3,100,r) && Near(r,-1.0),"SELL SL hit = -1R");
+
+   // --- Lot size
+   Check(Near(AurumLots(10,2650,2645,100,0.01,0.01),0.02),"$10 risk, $5 stop, 100 oz = 0.02 lot");
+   Check(Near(AurumLots(100,2650,2647,100,0.01,0.01),0.33),"lots rounded down");
+   Check(AurumLots(1,2650,2645,100,0.01,0.01)==0,"below minimum lot = 0");
+   Check(AurumLots(10,2650,2650,100,0.01,0.01)==0,"zero stop distance = 0");
 
    // --- Higher timeframe
    Check(AurumTrendDir(2650,2600)==1 && AurumTrendDir(2550,2600)==-1 && AurumTrendDir(2600,2600)==0,"trend direction");

@@ -1,12 +1,11 @@
-; Aurum v3 longer-trade baseline. Attach on H1 (trend: H4 auto). Check spread for your broker.
+; Aurum v4 longer-trade baseline. Attach on H1 (trend: H4 auto). Check spread for your broker.
 SignalMode=0
 SwingSize=5
 TrendTimeframe=0
-CooldownBars=5
-ShowSR=true
-ShowZones=true
-ShowTrade=true
-ShowPanel=true
+RiskPercent=1.0
+MinReward=1.5
+ShowAll=false
+ShowHistory=true
 PopupAlerts=true
 PushNotifications=false
 SoundAlerts=false
@@ -16,7 +15,8 @@ SLBufferATR=0.2
 MinRiskATR=0.5
 MaxItems=4
 ATRPeriod=14
-HistoryBars=1500
+MaxTradeBars=100
+HistoryBars=3000
 PanelX=12
 PanelY=24
 PanelFontSize=10
