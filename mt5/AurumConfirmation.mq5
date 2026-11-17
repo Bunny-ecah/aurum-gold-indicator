@@ -103,6 +103,9 @@ double results[];
 int lastDir=0,lastAge=0,skipAge=-1;
 double lastR=0;
 string lastHow="",skipText="";
+// Diagnostics: every setup (rejection candle at any zone or level) and the FIRST rule that stopped it
+int setupCount=0,blockWeak=0,blockTrend=0,blockBusy=0,blockSession=0,blockTarget=0,tradedCount=0;
+datetime firstBarTime=0;
 double lastClose=0,lastATR=0;
 int trendNow=0;
 // Sessions
@@ -178,6 +181,7 @@ void ResetState()
    ArrayFree(resT); ArrayFree(supT); ArrayFree(dTime); ArrayFree(sTime); ArrayFree(results);
    inTrade=false; tDir=0; tK=0; tScore=0; tAge=0; tTime=0; tEntry=0; tSL=0; tTP=0; tWhy="";
    lastDir=0; lastAge=0; lastR=0; lastHow=""; skipAge=-1; skipText="";
+   setupCount=0; blockWeak=0; blockTrend=0; blockBusy=0; blockSession=0; blockTarget=0; tradedCount=0; firstBarTime=0;
 }
 
 // Pivot at series index k: higher than the L older candles, not lower than the L newer candles.
@@ -359,8 +363,8 @@ void RenderPanel()
    if(prefix=="") return;
    int lineH=PanelFontSize+8;
    int width=(int)MathMin(640,MathMax(360,(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)-PanelX-16));
-   string rows[11]; color cols[11];
-   for(int i=0;i<11;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
+   string rows[12]; color cols[12];
+   for(int i=0;i<12;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
 
    rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF); cols[0]=clrGold;
    rows[1]="TREND        "+(trendNow>0?"UP   only BUY":trendNow<0?"DOWN   only SELL":"FLAT   no trades");
@@ -419,12 +423,25 @@ void RenderPanel()
    }
    else rows[8]="RECORD       No closed trades in the scanned history yet";
    string live; LiveGate(live);
-   rows[10]="ALERTS       "+delivery+"  |  "+live; cols[10]=clrSilver;
+   rows[11]="ALERTS       "+delivery+"  |  "+live; cols[11]=clrSilver;
+   // Why so few trades? Biggest blocker first
+   if(setupCount>0)
+   {
+      int counts[6]; string names[6]; int idx[6];
+      counts[0]=tradedCount; counts[1]=blockTrend; counts[2]=blockWeak; counts[3]=blockSession; counts[4]=blockTarget; counts[5]=blockBusy;
+      names[0]="traded"; names[1]="trend"; names[2]="area too weak"; names[3]="session"; names[4]="target too close"; names[5]="trade open";
+      for(int a=0;a<6;a++) idx[a]=a;
+      for(int a=0;a<6;a++) for(int b=a+1;b<6;b++) if(counts[idx[b]]>counts[idx[a]]) { int t=idx[a]; idx[a]=idx[b]; idx[b]=t; }
+      string parts="";
+      for(int a=0;a<6;a++) if(counts[idx[a]]>0) parts+=(parts==""?"":"  ")+names[idx[a]]+" "+IntegerToString(counts[idx[a]]);
+      rows[10]="SETUPS       "+IntegerToString(setupCount)+" since "+TimeToString(firstBarTime,TIME_DATE)+":  "+parts;
+      cols[10]=clrSilver;
+   }
 
-   PanelRect(prefix+"pbg",PanelX,PanelY,width,13*lineH,C'25,30,38');
+   PanelRect(prefix+"pbg",PanelX,PanelY,width,14*lineH,C'25,30,38');
    int statusH=PanelFontSize*2+12;
    int y=PanelY+8;
-   for(int i=0;i<11;i++)
+   for(int i=0;i<12;i++)
    {
       if(i==3)
       {
@@ -640,6 +657,19 @@ int OnCalculate(const int rates_total,const int prev_calculated,
 
       long barUTC=(long)time[i]-AurumServerOffset(winterOffset,followsUS,(long)time[i]);
       bool sessionOK=!sessionFilterOn || AurumSessionAllowed((int)Sessions,barUTC);
+      // Diagnostics for setups stopped before the session / target checks
+      int need=AurumPointsNeeded((int)SignalMode);
+      for(int side=0;side<2;side++)
+      {
+         int score=side==0?buyScore:sellScore;
+         bool rej=side==0?AurumBullRejection(c):AurumBearRejection(c);
+         if(!rej || score<1) continue;
+         if(firstBarTime==0) firstBarTime=time[limit];
+         setupCount++;
+         if(score<need) blockWeak++;
+         else if(side==0?trendDir<=0:trendDir>=0) blockTrend++;
+         else if(inTrade || timeExitNow) blockBusy++;
+      }
       int dir=(inTrade || timeExitNow)?0:AurumDecide((int)SignalMode,trendDir,AurumBullRejection(c),buyScore,AurumBearRejection(c),sellScore);
       if(dir!=0)
       {
@@ -669,16 +699,19 @@ int OnCalculate(const int rates_total,const int prev_calculated,
          bool targetOK=AurumTarget(dir,entry,stop,nearest,MinReward,tp);
          if(!sessionOK)
          {
+            blockSession++;
             skipK=k;
             skipText=(dir>0?"BUY":"SELL")+" setup skipped: outside "+SessionName();
          }
          else if(!targetOK)
          {
+            blockTarget++;
             skipK=k;
             skipText=(dir>0?"BUY":"SELL")+" skipped: target only "+DoubleToString(AurumRR(entry,stop,nearest),1)+"R away";
          }
          else
          {
+            tradedCount++;
             inTrade=true; tDir=dir; tK=k; tTime=time[i]; tEntry=entry; tSL=stop; tTP=tp; tWhy=why;
             tScore=dir>0?buyScore:sellScore;
             string side=(tScore>=3?"STRONG ":"")+(dir>0?"BUY":"SELL");

@@ -100,9 +100,12 @@ class Signal:
     result: float = None
 
 
-def run(bars, trend, s=Settings(), allowed=None):
+def run(bars, trend, s=Settings(), allowed=None, stats=None):
     """bars: list of (open, high, low, close); trend: list of 1/-1/0 per bar;
-    allowed: optional list of bools, False = candle outside the trading session (no new trades)."""
+    allowed: optional list of bools, False = candle outside the trading session (no new trades);
+    stats: optional dict, filled with the SETUPS diagnostics (first rule that stopped each setup)."""
+    if stats is not None:
+        stats.update(setups=0, weak=0, trend=0, busy=0, session=0, target=0, traded=0)
     atr = atr_series(bars)
     res, sup, demand, supply, signals = [], [], [], [], []
     trade = None
@@ -128,11 +131,25 @@ def run(bars, trend, s=Settings(), allowed=None):
         buy_score = 2 * bool(d_hits) + bool(sup_hits)      # zone counts double
         sell_score = 2 * bool(s_hits) + bool(res_hits)
         need = POINTS_NEEDED[s.mode]
-        buy_raw = bull_rejection(o, h, l, c) and buy_score >= need and trend[i] > 0
-        sell_raw = bear_rejection(o, h, l, c) and sell_score >= need and trend[i] < 0
-        in_session = (allowed is None or allowed[i]) and not time_exit
-        buy = buy_raw and not sell_raw and trade is None and in_session     # one trade at a time
-        sell = sell_raw and not buy_raw and trade is None and in_session
+        buy_rej, sell_rej = bull_rejection(o, h, l, c), bear_rejection(o, h, l, c)
+        buy_raw = buy_rej and buy_score >= need and trend[i] > 0
+        sell_raw = sell_rej and sell_score >= need and trend[i] < 0
+        can_open = trade is None and not time_exit       # one trade at a time; none on a time-exit candle
+        in_session = allowed is None or allowed[i]
+        if stats is not None:
+            for rej, score, with_trend in ((buy_rej, buy_score, trend[i] > 0), (sell_rej, sell_score, trend[i] < 0)):
+                if rej and score >= 1:
+                    stats["setups"] += 1
+                    if score < need:
+                        stats["weak"] += 1
+                    elif not with_trend:
+                        stats["trend"] += 1
+                    elif not can_open:
+                        stats["busy"] += 1
+                    elif not in_session:
+                        stats["session"] += 1
+        buy = buy_raw and not sell_raw and can_open and in_session
+        sell = sell_raw and not buy_raw and can_open and in_session
         if buy or sell:
             entry = c
             if buy:
@@ -140,6 +157,8 @@ def run(bars, trend, s=Settings(), allowed=None):
                 sl = min(structure - s.sl_buffer * a, entry - s.min_risk * a)
                 above = [p for p, _ in res if p > entry] + [z[1] for z in supply if z[1] > entry]
                 tp = target(1, entry, sl, min(above) if above else None, s.min_rr)
+                if stats is not None:
+                    stats["target" if tp is None else "traded"] += 1
                 if tp is not None:
                     why = " ".join(n for n, f in (("Demand", d_hits), ("Support", sup_hits)) if f)
                     trade = Signal(i, 1, buy_score, why, entry, sl, tp)
@@ -149,6 +168,8 @@ def run(bars, trend, s=Settings(), allowed=None):
                 sl = max(structure + s.sl_buffer * a, entry + s.min_risk * a)
                 below = [p for p, _ in sup if p < entry] + [z[0] for z in demand if z[0] < entry]
                 tp = target(-1, entry, sl, max(below) if below else None, s.min_rr)
+                if stats is not None:
+                    stats["target" if tp is None else "traded"] += 1
                 if tp is not None:
                     why = " ".join(n for n, f in (("Supply", s_hits), ("Resistance", res_hits)) if f)
                     trade = Signal(i, -1, sell_score, why, entry, sl, tp)

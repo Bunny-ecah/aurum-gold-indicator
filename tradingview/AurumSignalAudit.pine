@@ -208,6 +208,17 @@ var array<float> sBot = array.new<float>()
 var array<int> sBar = array.new<int>()
 var int skipBar = na
 var string skipText = ""
+// Diagnostics: every setup (a rejection candle at any zone or level) and the FIRST rule that stopped it.
+// Same counting as mt5/AurumConfirmation.mq5 and tradingview/tests/model.py.
+var int setupCount = 0
+var int blockWeak = 0       // area worth fewer points than the mode needs
+var int blockTrend = 0      // against the higher-timeframe trend (or trend flat)
+var int blockBusy = 0       // a trade was already open
+var int blockSession = 0    // outside the trading session
+var int blockTarget = 0     // next opposite area closer than the minimum reward
+var int tradedCount = 0
+var int firstBarTime = na
+firstBarTime := na(firstBarTime) ? time : firstBarTime
 
 // ---------- 1) Evaluate this closed candle against EXISTING areas ----------
 // Outputs: a new trade for this candle (newDir 1 BUY, -1 SELL, 0 none)
@@ -252,8 +263,23 @@ if barstate.isconfirmed and ready
     int buyScore = (inDemand ? 2 : 0) + (atSupport ? 1 : 0)
     int sellScore = (inSupply ? 2 : 0) + (atResistance ? 1 : 0)
     int need = modeInput == "Strict" ? 3 : modeInput == "Aggressive" ? 1 : 2
-    bool buyRaw = f_bullRejection(open, high, low, close) and buyScore >= need and trendDir > 0
-    bool sellRaw = f_bearRejection(open, high, low, close) and sellScore >= need and trendDir < 0
+    bool buyRej = f_bullRejection(open, high, low, close)
+    bool sellRej = f_bearRejection(open, high, low, close)
+    bool buyRaw = buyRej and buyScore >= need and trendDir > 0
+    bool sellRaw = sellRej and sellScore >= need and trendDir < 0
+    // Diagnostics for setups stopped before the session / target checks
+    for side = 0 to 1
+        bool setup = side == 0 ? buyRej and buyScore >= 1 : sellRej and sellScore >= 1
+        if setup
+            int score = side == 0 ? buyScore : sellScore
+            bool withTrend = side == 0 ? trendDir > 0 : trendDir < 0
+            setupCount += 1
+            if score < need
+                blockWeak += 1
+            else if not withTrend
+                blockTrend += 1
+            else if not canOpen
+                blockBusy += 1
 
     if (buyRaw or sellRaw) and not (buyRaw and sellRaw) and canOpen    // one trade at a time
         int dir = buyRaw ? 1 : -1
@@ -285,12 +311,15 @@ if barstate.isconfirmed and ready
         float tp = f_target(dir, entry, sl, nearest)
         string why = dir > 0 ? str.trim((inDemand ? "Demand " : "") + (atSupport ? "Support" : "")) : str.trim((inSupply ? "Supply " : "") + (atResistance ? "Resistance" : ""))
         if not sessionOK
+            blockSession += 1
             skipBar := bar_index
             skipText := (dir > 0 ? "BUY" : "SELL") + " setup skipped: outside " + sessionInput
         else if na(tp)
+            blockTarget += 1
             skipBar := bar_index
             skipText := (dir > 0 ? "BUY" : "SELL") + " skipped: target only " + str.tostring(math.abs(nearest - entry) / math.abs(entry - sl), "#.#") + "R away"
         else
+            tradedCount += 1
             newDir := dir
             newEntry := entry
             newSL := sl
@@ -526,13 +555,13 @@ string panelPosition = switch panelCorner
     "Bottom left" => position.bottom_left
     "Bottom right" => position.bottom_right
     => position.top_right
-var table panel = table.new(panelPosition, 2, 10, bgcolor=color.new(chart.bg_color, 5), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
+var table panel = table.new(panelPosition, 2, 11, bgcolor=color.new(chart.bg_color, 5), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
 f_row(int row, string name, string value, color valueColor) =>
     table.cell(panel, 0, row, name, text_color=color.gray, text_size=size.small, text_halign=text.align_left)
     table.cell(panel, 1, row, value, text_color=valueColor, text_size=size.small, text_halign=text.align_left)
 
 if barstate.islast
-    table.clear(panel, 0, 0, 1, 9)
+    table.clear(panel, 0, 0, 1, 10)
     color fg = chart.fg_color
     // Header and trend
     table.cell(panel, 0, 0, "AURUM GOLD", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
@@ -585,3 +614,14 @@ if barstate.islast
         f_row(9, "LAST " + str.tostring(n20), str.tostring(100.0 * wins20 / n20, "#") + "% win  ·  total " + f_r(total20), total20 >= 0 ? BUY_COLOR : SELL_COLOR)
     else
         f_row(8, "RECORD", "No closed trades in the loaded history yet", fg)
+    // Why so few trades? Biggest blocker first
+    if setupCount > 0
+        array<int> counts = array.from(tradedCount, blockTrend, blockWeak, blockSession, blockTarget, blockBusy)
+        array<string> names = array.from("traded", "trend", "area too weak", "session", "target too close", "trade open")
+        array<int> ranked = array.sort_indices(counts, order.descending)
+        string parts = ""
+        for idx in ranked
+            int c = array.get(counts, idx)
+            if c > 0
+                parts += (parts == "" ? "" : "  ·  ") + array.get(names, idx) + " " + str.tostring(c)
+        f_row(10, "SETUPS", str.tostring(setupCount) + " since " + str.format_time(firstBarTime, "d MMM", syminfo.timezone) + ":  " + parts, color.gray)

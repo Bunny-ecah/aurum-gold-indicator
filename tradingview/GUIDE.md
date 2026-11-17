@@ -26,6 +26,7 @@ Recommended start: **XAUUSD 15m chart** (trend from 4H) or **5m** (trend from 1H
 | LAST TRADE | How the previous signal ended. |
 | **RECORD** | Every closed signal in the loaded history: win %, average R, total R. |
 | LAST 20 | The same, for the 20 most recent signals: is it working *now*? |
+| **SETUPS** | Why there are few trades: every time price reacted at a zone or level, the first rule that stopped it, biggest first. |
 
 ## On the chart
 
@@ -49,6 +50,21 @@ A **SELL** is the mirror image.
 **Stop loss:** just beyond the area that was touched (+0.2 ATR), at least 0.5 ATR from entry.
 **Take profit:** the next opposite area, capped at 3R. No area ahead → 2R.
 **One trade at a time.** A new signal can only appear after the current one ends.
+
+## Too few signals? Read the SETUPS row
+
+A *setup* is any candle that touches a zone or S/R level and rejects it. The SETUPS row counts each one under the **first** rule that stopped it:
+
+| Blocker | Meaning | Setting that loosens it |
+| --- | --- | --- |
+| area too weak | Only an S/R level, but the mode needs a supply/demand zone | Signal mode → **Aggressive** |
+| trend | Against the higher-timeframe trend, or trend flat | Trend timeframe → a faster one (e.g. **60**) |
+| session | Outside London / New York | Trading sessions → **All day** |
+| target too close | Next opposite area closer than the minimum reward | Minimum reward → **1.2** |
+| trade open | A trade was already running | (one trade at a time; no setting) |
+| traded | Became a real signal | |
+
+Loosen the **biggest** blocker first, then check the Strategy Tester: more trades is only good if the profit factor stays above about 1.2. Example: `SETUPS 240 since 3 Nov: area too weak 150 · trend 50 · session 20 · target too close 12 · traded 6 · trade open 2`.
 
 ## Trading sessions
 

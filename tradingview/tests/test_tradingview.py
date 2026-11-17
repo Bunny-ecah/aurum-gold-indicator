@@ -123,7 +123,7 @@ class PineContract(unittest.TestCase):
         self.assertIn("and canOpen    // one trade at a time", PINE)
 
     def test_panel_has_status_and_record(self):
-        for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"LOT SIZE"', '"TAKE PROFIT"'):
+        for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"LOT SIZE"', '"TAKE PROFIT"', '"SETUPS"', '"SESSION"'):
             self.assertIn(text, PINE)
 
 
@@ -235,6 +235,19 @@ class ModelBehaviour(unittest.TestCase):
         self.assertTrue(all(allowed[x.bar] for x in filtered))
         self.assertLess(len(filtered), len(everything))
         self.assertEqual(run(bars, trend, allowed=[False] * len(bars)), [])
+
+    def test_setup_diagnostics_add_up(self):
+        for mode in POINTS_NEEDED:
+            bars, trend = random_bars(5)
+            allowed = [(i // 60) % 24 >= 8 for i in range(len(bars))]
+            stats = {}
+            sig = run(bars, trend, Settings(mode=mode), allowed=allowed, stats=stats)
+            parts = ("weak", "trend", "busy", "session", "target", "traded")
+            self.assertEqual(sum(stats[k] for k in parts), stats["setups"], (mode, stats))
+            self.assertEqual(stats["traded"], len(sig))
+            if mode == "Aggressive":
+                self.assertEqual(stats["weak"], 0)   # 1 point is always enough
+        self.assertEqual(run(*random_bars(5), stats=stats), run(*random_bars(5)))   # counting changes nothing
 
     def test_min_reward_filter(self):
         counts = [len(run(*random_bars(2), Settings(mode="Aggressive", min_rr=m))) for m in (1.0, 2.0, 3.0)]

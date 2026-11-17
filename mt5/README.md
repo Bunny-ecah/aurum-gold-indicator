@@ -19,7 +19,7 @@ Any timeframe works. Optional presets in `presets/`:
 
 ## What you get
 
-- **Panel:** TREND, SESSION, a big **STATUS** (BUY NOW / SELL NOW / IN TRADE / WAIT), Entry, Stop loss, Take profit with RR, **lot size**, what to wait for next, the last trade, and the **RECORD** of all closed signals in the scanned history (win %, average R, total R, last 20).
+- **Panel:** TREND, SESSION, a big **STATUS** (BUY NOW / SELL NOW / IN TRADE / WAIT), Entry, Stop loss, Take profit with RR, **lot size**, what to wait for next, the last trade, the **RECORD** of all closed signals in the scanned history (win %, average R, total R, last 20), and **SETUPS**: why setups did not become trades (see the guide).
 - **Chart:** only the nearest supply/resistance above and demand/support below (set `ShowAll=true` for more), BUY/SELL text at signals, the result text where each trade ended, and red/green risk/reward boxes for the open trade.
 - **Lot size** uses your account balance, `RiskPercent` and the broker's tick value, rounded down to the volume step. If even the minimum lot risks more than your %, the panel says so in orange.
 

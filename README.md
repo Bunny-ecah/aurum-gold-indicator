@@ -17,6 +17,7 @@ Earlier TradingView sources are retained for comparison: basic indicator, multi-
 - **Session filter:** new trades only in London and/or New York hours (daylight saving handled).
 - **SNR + SND:** support/resistance from swing points and supply/demand zones from strong impulse candles. Only the nearest area above and below price is drawn.
 - **Trade plan:** entry, stop loss, take profit, reward-to-risk and **lot size** for your balance and risk %. Setups with too little room to the target are skipped.
+- **SETUPS:** counts every reaction at a zone or level and the rule that stopped it, so you can see why there are few signals.
 - **RECORD:** every signal is followed to its result, giving win %, average R and total R on the loaded history: a built-in backtest of the rules.
 - **All-in-one TradingView script:** the same script also runs in the Strategy Tester (net profit, drawdown, profit factor, with costs), so it needs only one saved script.
 - Any timeframe, few settings, closed-candle signals that do not repaint.
@@ -52,7 +53,7 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_tradingview.py
 ```
 
-This runs 28 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+This runs 29 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 
