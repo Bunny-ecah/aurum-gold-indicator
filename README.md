@@ -1,12 +1,12 @@
 # Aurum Gold Indicator
 
-**Work in progress — demo research only.** XAUUSD confirmation indicators for MetaTrader 5 and TradingView. This repository preserves the unfinished project, source, tests and known limitations. It does not contain a validated profitable trading strategy and does not place orders.
+**Work in progress — demo research only.** XAUUSD confirmation indicators for MetaTrader 5 and TradingView. This repository preserves the unfinished project, source, tests and known limitations. It does not contain a validated profitable trading strategy and the indicators do not place orders; the optional MT5 EA trades demo accounts by default.
 
 ## Current versions
 
 | Platform | Current source | Status |
 | --- | --- | --- |
-| MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v4.10; core tests pass; MetaEditor compile and demo testing outstanding |
+| MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v4.20; core tests pass; MetaEditor compile and demo testing outstanding |
 | TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v6 all-in-one (panel + signals + Strategy Tester in one script); compiles in Pine Editor; demo testing outstanding |
 
 Earlier TradingView sources are retained for comparison: basic indicator, multi-timeframe v2 and entry-planner v3. Install only the version you intend to use, rather than all of them on one chart.
@@ -28,6 +28,10 @@ How to use it, read the panel and backtest: [`tradingview/GUIDE.md`](tradingview
 ## Backtest result
 
 On real XAUUSD data from 2012 to 2022, the default settings on the **1H chart** made a small profit after spread: **239 trades, 43% win, profit factor 1.19, +26.9R, worst drawdown −11.6R**, profitable in each of the three periods tested. 15m and lower lost money with every setting tried. Full results, method and a demo-account plan: [`BACKTEST-RESULTS.md`](BACKTEST-RESULTS.md). Rerun it yourself: [`backtest/`](backtest/README.md).
+
+## Automatic demo trading (MT5 EA)
+
+[`mt5/AurumEA.mq5`](mt5/AurumEA.mq5) trades the indicator's signals automatically in MT5 (same entry, stop loss, take profit and lot size), **demo accounts only by default**, one trade at a time. It can also be backtested in the MT5 Strategy Tester with your broker's real prices. Setup and demo plan: [`mt5/EA-GUIDE.md`](mt5/EA-GUIDE.md).
 
 ## Installation
 
@@ -58,7 +62,7 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_tradingview.py
 ```
 
-This runs 32 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+This runs 35 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 

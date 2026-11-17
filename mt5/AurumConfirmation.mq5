@@ -1,8 +1,8 @@
 #property copyright "Aurum Gold - demo research"
-#property version   "4.10"
+#property version   "4.20"
 #property description "XAUUSD supply/demand + support/resistance signals with entry, stop, target, lot size and a built-in track record. No order execution."
 #property indicator_chart_window
-#property indicator_buffers 2
+#property indicator_buffers 6
 #property indicator_plots   2
 #property indicator_label1  "BUY signal"
 #property indicator_type1   DRAW_ARROW
@@ -80,6 +80,9 @@ input int    PanelFontSize=10;                          // Panel font size
 #define MAX_TICK_AGE 30
 
 double Buy[],Sell[];
+// Hidden buffers read by AurumEA.mq5 (buffer 2-5), set on the signal candle only:
+// 2 = direction (1 BUY, -1 SELL), 3 = stop loss, 4 = take profit, 5 = grade (0 A, 1 B, 2 C)
+double SigDir[],SigSL[],SigTP[],SigGrade[];
 int ha=INVALID_HANDLE,ht=INVALID_HANDLE,he=INVALID_HANDLE;
 ENUM_TIMEFRAMES trendTF;
 int pivotLen=5;
@@ -529,7 +532,10 @@ int OnInit()
       PanelX<0 || PanelY<0 || PanelFontSize<8 || PanelFontSize>18)
    { Print("Aurum: an input is out of range. Reset inputs to defaults."); return INIT_PARAMETERS_INCORRECT; }
    SetIndexBuffer(0,Buy,INDICATOR_DATA); SetIndexBuffer(1,Sell,INDICATOR_DATA);
+   SetIndexBuffer(2,SigDir,INDICATOR_CALCULATIONS); SetIndexBuffer(3,SigSL,INDICATOR_CALCULATIONS);
+   SetIndexBuffer(4,SigTP,INDICATOR_CALCULATIONS); SetIndexBuffer(5,SigGrade,INDICATOR_CALCULATIONS);
    ArraySetAsSeries(Buy,true); ArraySetAsSeries(Sell,true);
+   ArraySetAsSeries(SigDir,true); ArraySetAsSeries(SigSL,true); ArraySetAsSeries(SigTP,true); ArraySetAsSeries(SigGrade,true);
    PlotIndexSetInteger(0,PLOT_ARROW,233); PlotIndexSetInteger(1,PLOT_ARROW,234);
    PlotIndexSetDouble(0,PLOT_EMPTY_VALUE,EMPTY_VALUE); PlotIndexSetDouble(1,PLOT_EMPTY_VALUE,EMPTY_VALUE);
    IndicatorSetInteger(INDICATOR_DIGITS,_Digits);
@@ -564,7 +570,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
    ArraySetAsSeries(low,true); ArraySetAsSeries(close,true);
    bool reset=prev_calculated==0 || rates_total<previousRates;
    previousRates=rates_total;
-   if(rates_total>0) { Buy[0]=EMPTY_VALUE; Sell[0]=EMPTY_VALUE; }
+   if(rates_total>0) { Buy[0]=EMPTY_VALUE; Sell[0]=EMPTY_VALUE; SigDir[0]=0; SigSL[0]=0; SigTP[0]=0; SigGrade[0]=0; }
    // All work happens once per NEW closed candle; ticks only refresh the panel timer.
    if(!reset && processedBar==time[0]) return rates_total;
    int L=pivotLen;
@@ -607,6 +613,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
    sessionOKNow=!sessionFilterOn || AurumSessionAllowed((int)Sessions,nowUTC);
 
    ArrayInitialize(Buy,EMPTY_VALUE); ArrayInitialize(Sell,EMPTY_VALUE);
+   ArrayInitialize(SigDir,0); ArrayInitialize(SigSL,0); ArrayInitialize(SigTP,0); ArrayInitialize(SigGrade,0);
    ResetState();
    ObjectsDeleteAll(0,prefix+"s");
    int latestSignal=0,lastExitK=-1,skipK=-1;
@@ -741,6 +748,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             if(zoneHit && fresh) tWhy=why+" (fresh)";
             string side=(dir>0?"BUY ":"SELL ")+GradeText(tGrade);
             if(dir>0) Buy[i]=c.low-0.3*c.atr; else Sell[i]=c.high+0.3*c.atr;
+            SigDir[i]=dir; SigSL[i]=stop; SigTP[i]=tp; SigGrade[i]=tGrade;
             if(ShowHistory)
                Text(prefix+"s"+IntegerToString((long)time[i]),time[i],dir>0?c.low-0.6*c.atr:c.high+0.6*c.atr,side,
                     dir>0?clrMediumSeaGreen:clrTomato,dir>0?ANCHOR_UPPER:ANCHOR_LOWER,9);

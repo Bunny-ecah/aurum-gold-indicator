@@ -17,6 +17,7 @@ PINE = (ROOT / "tradingview" / "AurumSignalAudit.pine").read_text(encoding="utf-
 
 CORE = (ROOT / "mt5" / "AurumCore.mqh").read_text(encoding="utf-8")
 MQ5 = (ROOT / "mt5" / "AurumConfirmation.mq5").read_text(encoding="utf-8")
+EA = (ROOT / "mt5" / "AurumEA.mq5").read_text(encoding="utf-8")
 
 
 def calm(n, price=2650.0):
@@ -161,6 +162,30 @@ class AllInOneContract(unittest.TestCase):
         self.assertIn('time(timeframe.period, "0800-1700:23456", "America/New_York")', PINE)
         self.assertIn("tfSec < 14400", PINE)
         self.assertIn("sessions==AURUM_SESSIONS_ALL", CORE)
+
+
+class EAContract(unittest.TestCase):
+    """AurumEA.mq5 must trade exactly the indicator's signals, safely."""
+
+    def test_reads_the_indicator_buffers(self):
+        for idx, name in ((2, "SigDir"), (3, "SigSL"), (4, "SigTP"), (5, "SigGrade")):
+            self.assertIn(f"SetIndexBuffer({idx},{name},INDICATOR_CALCULATIONS)", MQ5)
+            self.assertIn(f"CopyBuffer(handle,{idx},1,1,", EA)   # shift 1 = the candle that just closed
+        self.assertIn("#property indicator_buffers 6", MQ5)
+        self.assertIn("SigDir[i]=dir; SigSL[i]=stop; SigTP[i]=tp; SigGrade[i]=tGrade;", MQ5)
+        self.assertIn('#define INDICATOR_PATH "Aurum\\\\AurumConfirmation"', EA)
+
+    def test_safety_defaults(self):
+        self.assertIn("input bool        DemoOnly=true;", EA)
+        self.assertIn("input double      RiskPercent=1.0;", EA)
+        self.assertIn("RiskPercent>5", EA)                      # refuses more than 5% risk
+        self.assertIn("if(open) { Report(side+\" signal skipped: an Aurum trade is already open\")", EA)
+        self.assertIn("if(!tester) lastBar=iTime(_Symbol,_Period,0);", EA)   # no stale signal at start
+        self.assertIn("AurumLots(riskMoney,entry,stop,MoneyPerPricePerLot(),step,minLot)", EA)
+
+    def test_time_limit_matches_indicator(self):
+        self.assertIn("input int         MaxTradeBars=100;", EA)
+        self.assertIn("input int    MaxTradeBars=100;", MQ5)
 
 
 class ModelBehaviour(unittest.TestCase):

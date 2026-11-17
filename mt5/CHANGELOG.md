@@ -1,3 +1,9 @@
+# v4.20 + AurumEA 1.00
+
+- New `AurumEA.mq5`: trades the indicator's signals automatically with its stop loss, take profit and risk-% lot size; demo accounts only by default; one trade at a time; spread, stop-distance and minimum-lot checks; 100-candle time exit; grade filter; status on the chart and optional phone notifications; works in the Strategy Tester.
+- Indicator: hidden buffers 2-5 (direction, stop loss, take profit, grade) on each signal candle for the EA.
+- Defaults are the settings that held up in the 10-year real-data test (H1, Balanced, All day, swing Large, minimum reward 1.2, stop buffer 0.5); single `Recommended-H1.set` preset.
+
 # v4.10
 
 - Trading-session filter: new trades only when the signal candle opens in London (08:00-17:00 London) and/or New York (08:00-17:00 New York), Monday to Friday. Daylight saving handled; checked against the IANA time-zone database. Ignored on H4 and higher.

@@ -1,6 +1,6 @@
-# Aurum Gold for MT5 — v4.10
+# Aurum Gold for MT5 — v4.20
 
-Signals-only indicator for gold/USD on desktop MT5. It does **not** place orders. Same rules as TradingView v6. The full trader's guide (panel, rules, record, backtesting) is [`../tradingview/GUIDE.md`](../tradingview/GUIDE.md).
+Signals indicator for gold/USD on desktop MT5. The indicator does **not** place orders; to trade its signals automatically on a demo account, use **AurumEA** ([`EA-GUIDE.md`](EA-GUIDE.md)). Same rules as TradingView v6. The full trader's guide (panel, rules, record, backtesting) is [`../tradingview/GUIDE.md`](../tradingview/GUIDE.md).
 
 ## Install or upgrade
 
@@ -60,7 +60,7 @@ The shared rules in `AurumCore.mqh` are compiled as C++ and tested (120 checks):
 - Windows (x64 Native Tools prompt): `tests\run-tests.cmd`
 - Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN tests/core_tests.cpp -o core_tests && ./core_tests`
 
-These do not test MT5 charts, history loading or alert delivery. **v4.10 has not yet been compiled in MetaEditor.** Press F7 and report any error line.
+These do not test MT5 charts, history loading or alert delivery. **v4.20 and AurumEA have not yet been compiled in MetaEditor.** Press F7 and report any error line.
 
 ## Limits
 

@@ -60,8 +60,8 @@ Lessons: gold's 15m noise hits zone stops too often; a stop buffer of 0.5 ATR ma
 
 1. **TradingView:** paste `AurumSignalAudit.pine`, open **XAUUSD 1H** (OANDA), keep the defaults. Check the Strategy Tester on recent data: profit factor above 1.0 with 20+ trades is a good sign.
 2. **Alerts:** create an alert → condition *Aurum v6* → **alert() function calls only** → notify in app.
-3. **Demo account** (MT5 demo, or TradingView paper trading) for **at least 2 months or 20 trades**, whichever is later.
-4. Take **every** signal with the panel's entry, stop, target and lot size. No skipping, no moving the stop.
+3. **Demo account** for **at least 2 months or 20 trades**, whichever is later. Easiest: let **AurumEA** trade the MT5 demo account automatically ([`mt5/EA-GUIDE.md`](mt5/EA-GUIDE.md)); it also runs in the MT5 Strategy Tester on your broker's real prices. Or trade the TradingView alerts by hand.
+4. Take **every** signal with the panel's entry, stop, target and lot size (the EA does this for you). No skipping, no moving the stop.
 5. Write each trade in a journal:
 
 | Date | BUY/SELL | Grade | Entry | SL | TP | Result (R) | Note |
