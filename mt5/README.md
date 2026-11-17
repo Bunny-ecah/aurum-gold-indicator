@@ -19,7 +19,7 @@ Any timeframe works. Optional presets in `presets/`:
 
 ## What you get
 
-- **Panel:** TREND, SESSION, a big **STATUS** (BUY NOW / SELL NOW / IN TRADE / WAIT), Entry, Stop loss, Take profit with RR, **lot size**, what to wait for next, the last trade, the **RECORD** of all closed signals in the scanned history (win %, average R, total R, last 20), and **SETUPS**: why setups did not become trades (see the guide).
+- **Panel:** TREND, SESSION, a big **STATUS** (BUY NOW / SELL NOW / IN TRADE / WAIT), Entry, Stop loss, Take profit with RR and % of balance, **lot size**, **QUALITY** grade A/B/C and **WIN CHANCE**, what to wait for next, the last trade, the **RECORD** of all closed signals in the scanned history (win %, average R, total R, last 20), and **SETUPS**: why setups did not become trades (see the guide).
 - **Chart:** only the nearest supply/resistance above and demand/support below (set `ShowAll=true` for more), BUY/SELL text at signals, the result text where each trade ended, and red/green risk/reward boxes for the open trade.
 - **Lot size** uses your account balance, `RiskPercent` and the broker's tick value, rounded down to the volume step. If even the minimum lot risks more than your %, the panel says so in orange.
 
@@ -45,7 +45,7 @@ Any timeframe works. Optional presets in `presets/`:
 
 - Sent only for a **new** closed candle after the indicator is running. Old signals are never alerted on load.
 - Skipped (and shown on the panel) when MT5 is disconnected, the quote is stale, the spread is above the cap, or more than 60 s passed after the candle closed.
-- Message: `Aurum BUY XAUUSD M15 | Entry … | SL … | TP … | RR 1:2.0 | Lot 0.05 | Demand`.
+- Message: `Aurum BUY XAUUSD M15 | Quality A 77/100 | Entry … | SL … | TP … | RR 1:2.0 = +2.0% if TP | Lot 0.05 | Demand (fresh)`.
 - Phone: in MT5 mobile copy your **MetaQuotes ID** → desktop **Tools > Options > Notifications** → enable, paste ID, **Test** → set `Phone push notification = true`.
 
 ## Sessions and your broker's clock
@@ -60,7 +60,7 @@ For a full report (profit factor, drawdown, costs) use the TradingView strategy 
 
 ## Developer tests
 
-The shared rules in `AurumCore.mqh` are compiled as C++ and tested (114 checks):
+The shared rules in `AurumCore.mqh` are compiled as C++ and tested (120 checks):
 
 - Windows (x64 Native Tools prompt): `tests\run-tests.cmd`
 - Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN tests/core_tests.cpp -o core_tests && ./core_tests`

@@ -98,6 +98,9 @@ int tDir=0,tK=0,tScore=0,tAge=0;
 datetime tTime=0;
 double tEntry=0,tSL=0,tTP=0;
 string tWhy="";
+int tQuality=0,tGrade=2;
+int gradeTrades[3],gradeWins[3];   // record per grade A/B/C, for the WIN CHANCE
+int dTouch[],sTouch[];             // candles that entered each zone (fresh = 0)
 // Record of closed trades (R multiples) = built-in backtest
 double results[];
 int lastDir=0,lastAge=0,skipAge=-1;
@@ -127,6 +130,8 @@ string SessionName()
 {
    return Sessions==SESSIONS_LONDON?"London only":Sessions==SESSIONS_NEWYORK?"New York only":Sessions==SESSIONS_ALL?"All day":"London + New York";
 }
+
+string GradeText(const int g) { return g==0?"A":g==1?"B":"C"; }
 
 string Price(const double p) { return p>0?DoubleToString(p,_Digits):"--"; }
 string RText(const double r) { return (r>=0?"+":"")+DoubleToString(r,2)+"R"; }
@@ -165,20 +170,22 @@ void PushLevel(double &p[],datetime &t[],const double price,const datetime when,
    while(ArraySize(p)>MaxItems) { ArrayRemove(p,0,1); ArrayRemove(t,0,1); }
 }
 
-void PushZone(double &top[],double &bot[],datetime &t[],const double zTop,const double zBot,const datetime when)
+void PushZone(double &top[],double &bot[],datetime &t[],int &touch[],const double zTop,const double zBot,const datetime when)
 {
    for(int i=ArraySize(top)-1;i>=0;i--)
-      if(bot[i]<=zTop && top[i]>=zBot) { ArrayRemove(top,i,1); ArrayRemove(bot,i,1); ArrayRemove(t,i,1); }
+      if(bot[i]<=zTop && top[i]>=zBot) { ArrayRemove(top,i,1); ArrayRemove(bot,i,1); ArrayRemove(t,i,1); ArrayRemove(touch,i,1); }
    int n=ArraySize(top);
-   ArrayResize(top,n+1); ArrayResize(bot,n+1); ArrayResize(t,n+1);
-   top[n]=zTop; bot[n]=zBot; t[n]=when;
-   while(ArraySize(top)>MaxItems) { ArrayRemove(top,0,1); ArrayRemove(bot,0,1); ArrayRemove(t,0,1); }
+   ArrayResize(top,n+1); ArrayResize(bot,n+1); ArrayResize(t,n+1); ArrayResize(touch,n+1);
+   top[n]=zTop; bot[n]=zBot; t[n]=when; touch[n]=0;
+   while(ArraySize(top)>MaxItems) { ArrayRemove(top,0,1); ArrayRemove(bot,0,1); ArrayRemove(t,0,1); ArrayRemove(touch,0,1); }
 }
 
 void ResetState()
 {
    ArrayFree(resP); ArrayFree(supP); ArrayFree(dTop); ArrayFree(dBot); ArrayFree(sTop); ArrayFree(sBot);
    ArrayFree(resT); ArrayFree(supT); ArrayFree(dTime); ArrayFree(sTime); ArrayFree(results);
+   ArrayFree(dTouch); ArrayFree(sTouch); ArrayInitialize(gradeTrades,0); ArrayInitialize(gradeWins,0);
+   tQuality=0; tGrade=2;
    inTrade=false; tDir=0; tK=0; tScore=0; tAge=0; tTime=0; tEntry=0; tSL=0; tTP=0; tWhy="";
    lastDir=0; lastAge=0; lastR=0; lastHow=""; skipAge=-1; skipText="";
    setupCount=0; blockWeak=0; blockTrend=0; blockBusy=0; blockSession=0; blockTarget=0; tradedCount=0; firstBarTime=0;
@@ -363,8 +370,8 @@ void RenderPanel()
    if(prefix=="") return;
    int lineH=PanelFontSize+8;
    int width=(int)MathMin(640,MathMax(360,(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)-PanelX-16));
-   string rows[12]; color cols[12];
-   for(int i=0;i<12;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
+   string rows[14]; color cols[14];
+   for(int i=0;i<14;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
 
    rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF); cols[0]=clrGold;
    rows[1]="TREND        "+(trendNow>0?"UP   only BUY":trendNow<0?"DOWN   only SELL":"FLAT   no trades");
@@ -384,10 +391,17 @@ void RenderPanel()
       double lot=LotSize(tEntry,tSL);
       double minLot=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
       rows[4]="ENTRY        "+Price(tEntry)+(tAge>0?"   ("+IntegerToString(tAge)+" candles ago)":""); cols[4]=clrDodgerBlue;
-      rows[5]="STOP LOSS    "+Price(tSL); cols[5]=clrTomato;
-      rows[6]="TAKE PROFIT  "+Price(tTP)+"   RR 1 : "+DoubleToString(AurumRR(tEntry,tSL,tTP),1); cols[6]=clrLimeGreen;
+      rows[5]="STOP LOSS    "+Price(tSL)+"   = -"+DoubleToString(RiskPercent,1)+"% ("+DoubleToString(RiskMoney(),2)+")"; cols[5]=clrTomato;
+      rows[6]="TAKE PROFIT  "+Price(tTP)+"   = +"+DoubleToString(AurumRR(tEntry,tSL,tTP)*RiskPercent,1)+"% ("+DoubleToString(AurumRR(tEntry,tSL,tTP)*RiskMoney(),2)+")   RR 1 : "+DoubleToString(AurumRR(tEntry,tSL,tTP),1); cols[6]=clrLimeGreen;
       if(lot>0) rows[7]="LOT SIZE     "+DoubleToString(lot,2)+" lot = risk "+DoubleToString(RiskMoney(),2)+" "+AccountInfoString(ACCOUNT_CURRENCY)+" ("+DoubleToString(RiskPercent,1)+"%)";
       else { rows[7]="LOT SIZE     min "+DoubleToString(minLot,2)+" lot risks "+DoubleToString(minLot*risk*MoneyPerPricePerLot(),2)+" - above "+DoubleToString(RiskPercent,1)+"%"; cols[7]=clrOrange; }
+      rows[8]="QUALITY      "+GradeText(tGrade)+"   "+IntegerToString(tQuality)+"/100   "+tWhy;
+      cols[8]=tGrade==0?clrMediumSeaGreen:tGrade==1?clrOrange:clrTomato;
+      // Win chance = how past signals of the same grade ended (needs 10+ to mean anything)
+      int gN=gradeTrades[tGrade],gW=gradeWins[tGrade],allN=ArraySize(results),allW=0;
+      for(int a=0;a<allN;a++) if(results[a]>0) allW++;
+      if(gN>=10) rows[9]="WIN CHANCE   "+DoubleToString(100.0*gW/gN,0)+"%   ("+IntegerToString(gW)+" of "+IntegerToString(gN)+" past grade-"+GradeText(tGrade)+" signals hit TP)";
+      else { rows[9]="WIN CHANCE   Not enough grade-"+GradeText(tGrade)+" history yet ("+IntegerToString(gN)+" trades)"+(allN>0?"   all signals: "+DoubleToString(100.0*allW/allN,0)+"% of "+IntegerToString(allN):""); cols[9]=clrSilver; }
    }
    else
    {
@@ -416,14 +430,16 @@ void RenderPanel()
          if(i>=first20) { if(results[i]>0) wins20++; total20+=results[i]; }
       }
       int n20=n-first20;
-      rows[8]="RECORD       "+IntegerToString(n)+" trades  "+DoubleToString(100.0*wins/n,0)+"% win  avg "+RText(total/n)+"  total "+RText(total);
-      cols[8]=total>=0?clrMediumSeaGreen:clrTomato;
-      rows[9]="LAST "+IntegerToString(n20)+"      "+DoubleToString(100.0*wins20/n20,0)+"% win  total "+RText(total20);
-      cols[9]=total20>=0?clrMediumSeaGreen:clrTomato;
+      rows[10]="RECORD       "+IntegerToString(n)+" trades  "+DoubleToString(100.0*wins/n,0)+"% win  avg "+RText(total/n)+"  total "+RText(total);
+      cols[10]=total>=0?clrMediumSeaGreen:clrTomato;
+      string byGrade="";
+      for(int g=0;g<3;g++) if(gradeTrades[g]>0) byGrade+=(byGrade==""?"":"  ")+GradeText(g)+" "+DoubleToString(100.0*gradeWins[g]/gradeTrades[g],0)+"% ("+IntegerToString(gradeTrades[g])+")";
+      rows[11]="LAST "+IntegerToString(n20)+"      "+DoubleToString(100.0*wins20/n20,0)+"% win  total "+RText(total20)+"   by grade: "+byGrade;
+      cols[11]=total20>=0?clrMediumSeaGreen:clrTomato;
    }
-   else rows[8]="RECORD       No closed trades in the scanned history yet";
+   else rows[10]="RECORD       No closed trades in the scanned history yet";
    string live; LiveGate(live);
-   rows[11]="ALERTS       "+delivery+"  |  "+live; cols[11]=clrSilver;
+   rows[13]="ALERTS       "+delivery+"  |  "+live; cols[13]=clrSilver;
    // Why so few trades? Biggest blocker first
    if(setupCount>0)
    {
@@ -434,14 +450,14 @@ void RenderPanel()
       for(int a=0;a<6;a++) for(int b=a+1;b<6;b++) if(counts[idx[b]]>counts[idx[a]]) { int t=idx[a]; idx[a]=idx[b]; idx[b]=t; }
       string parts="";
       for(int a=0;a<6;a++) if(counts[idx[a]]>0) parts+=(parts==""?"":"  ")+names[idx[a]]+" "+IntegerToString(counts[idx[a]]);
-      rows[10]="SETUPS       "+IntegerToString(setupCount)+" since "+TimeToString(firstBarTime,TIME_DATE)+":  "+parts;
-      cols[10]=clrSilver;
+      rows[12]="SETUPS       "+IntegerToString(setupCount)+" since "+TimeToString(firstBarTime,TIME_DATE)+":  "+parts;
+      cols[12]=clrSilver;
    }
 
-   PanelRect(prefix+"pbg",PanelX,PanelY,width,14*lineH,C'25,30,38');
+   PanelRect(prefix+"pbg",PanelX,PanelY,width,16*lineH,C'25,30,38');
    int statusH=PanelFontSize*2+12;
    int y=PanelY+8;
-   for(int i=0;i<12;i++)
+   for(int i=0;i<14;i++)
    {
       if(i==3)
       {
@@ -615,6 +631,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             timeExitNow=!slHit && !tpHit;
             inTrade=false; lastDir=tDir; lastR=r; lastExitK=k;
             int n=ArraySize(results); ArrayResize(results,n+1); results[n]=r;
+            gradeTrades[tGrade]++; if(r>0) gradeWins[tGrade]++;
             if(ShowHistory)
                Text(prefix+"sx"+IntegerToString((long)time[i]),time[i],tDir>0?c.high+0.4*c.atr:c.low-0.4*c.atr,
                     lastHow+" "+RText(r),r>0?clrMediumSeaGreen:r<0?clrTomato:clrSilver,tDir>0?ANCHOR_LOWER:ANCHOR_UPPER,9);
@@ -638,14 +655,14 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       if(i==1) trendNow=trendDir;
 
       // 1) Evaluate this closed candle against EXISTING areas
-      bool inDemand=false,inSupply=false,atSupport=false,atResistance=false;
+      bool inDemand=false,inSupply=false,atSupport=false,atResistance=false,demandFresh=false,supplyFresh=false;
       double demandLow=0,supplyHigh=0,supportLow=0,resistanceHigh=0;
       for(int z=0;z<ArraySize(dTop);z++)
          if(AurumDemandTouch(c,dBot[z],dTop[z],tol))
-         { demandLow=inDemand?MathMin(demandLow,dBot[z]):dBot[z]; inDemand=true; }
+         { demandLow=inDemand?MathMin(demandLow,dBot[z]):dBot[z]; inDemand=true; if(dTouch[z]==0) demandFresh=true; }
       for(int z=0;z<ArraySize(sTop);z++)
          if(AurumSupplyTouch(c,sBot[z],sTop[z],tol))
-         { supplyHigh=inSupply?MathMax(supplyHigh,sTop[z]):sTop[z]; inSupply=true; }
+         { supplyHigh=inSupply?MathMax(supplyHigh,sTop[z]):sTop[z]; inSupply=true; if(sTouch[z]==0) supplyFresh=true; }
       for(int z=0;z<ArraySize(supP);z++)
          if(AurumSupportTouch(c,supP[z],tol))
          { supportLow=atSupport?MathMin(supportLow,supP[z]):supP[z]; atSupport=true; }
@@ -714,7 +731,12 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             tradedCount++;
             inTrade=true; tDir=dir; tK=k; tTime=time[i]; tEntry=entry; tSL=stop; tTP=tp; tWhy=why;
             tScore=dir>0?buyScore:sellScore;
-            string side=(tScore>=3?"STRONG ":"")+(dir>0?"BUY":"SELL");
+            bool zoneHit=dir>0?inDemand:inSupply, levelHit=dir>0?atSupport:atResistance;
+            bool fresh=dir>0?demandFresh:supplyFresh;
+            tQuality=AurumQuality(zoneHit,levelHit,fresh,AurumRR(entry,stop,tp),AurumLondonOpen(barUTC),AurumNewYorkOpen(barUTC));
+            tGrade=AurumGrade(tQuality);
+            if(zoneHit && fresh) tWhy=why+" (fresh)";
+            string side=(dir>0?"BUY ":"SELL ")+GradeText(tGrade);
             if(dir>0) Buy[i]=c.low-0.3*c.atr; else Sell[i]=c.high+0.3*c.atr;
             if(ShowHistory)
                Text(prefix+"s"+IntegerToString((long)time[i]),time[i],dir>0?c.low-0.6*c.atr:c.high+0.6*c.atr,side,
@@ -722,18 +744,23 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             if(i==1)
             {
                latestSignal=dir;
-               latestMessage=StringFormat("Aurum %s %s %s | Entry %s | SL %s | TP %s | RR 1:%.1f | Lot %.2f | %s",
-                  side,_Symbol,TFText(_Period),Price(entry),Price(stop),Price(tp),AurumRR(entry,stop,tp),LotSize(entry,stop),why);
+               double rrNow=AurumRR(entry,stop,tp);
+               latestMessage=StringFormat("Aurum %s %s %s | Quality %s %d/100 | Entry %s | SL %s | TP %s | RR 1:%.1f = +%.1f%% if TP | Lot %.2f | %s",
+                  dir>0?"BUY":"SELL",_Symbol,TFText(_Period),GradeText(tGrade),tQuality,Price(entry),Price(stop),Price(tp),
+                  rrNow,rrNow*RiskPercent,LotSize(entry,stop),tWhy);
             }
          }
       }
 
       // 2) Update areas with this closed candle
       double mergeTol=MERGE_ATR*c.atr;
+      // Count every candle that enters a zone (a zone is "fresh" until its first touch)
+      for(int z=0;z<ArraySize(dTop);z++) if(c.low<=dTop[z]+tol) dTouch[z]++;
+      for(int z=0;z<ArraySize(sBot);z++) if(c.high>=sBot[z]-tol) sTouch[z]++;
       for(int z=ArraySize(dTop)-1;z>=0;z--)
-         if(AurumDemandBroken(c.close,dBot[z])) { ArrayRemove(dTop,z,1); ArrayRemove(dBot,z,1); ArrayRemove(dTime,z,1); }
+         if(AurumDemandBroken(c.close,dBot[z])) { ArrayRemove(dTop,z,1); ArrayRemove(dBot,z,1); ArrayRemove(dTime,z,1); ArrayRemove(dTouch,z,1); }
       for(int z=ArraySize(sTop)-1;z>=0;z--)
-         if(AurumSupplyBroken(c.close,sTop[z])) { ArrayRemove(sTop,z,1); ArrayRemove(sBot,z,1); ArrayRemove(sTime,z,1); }
+         if(AurumSupplyBroken(c.close,sTop[z])) { ArrayRemove(sTop,z,1); ArrayRemove(sBot,z,1); ArrayRemove(sTime,z,1); ArrayRemove(sTouch,z,1); }
       double flipSup[],flipRes[]; datetime flipSupT[],flipResT[];
       for(int z=ArraySize(resP)-1;z>=0;z--)
          if(c.close>resP[z])
@@ -755,8 +782,8 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       AurumCandle base;
       base.open=open[i+1]; base.high=high[i+1]; base.low=low[i+1]; base.close=close[i+1]; base.atr=atr[i+2];
       double zb=0,zt=0;
-      if(AurumDemandZone(base,c,ImpulseATR,zb,zt)) PushZone(dTop,dBot,dTime,zt,zb,time[i+1]);
-      if(AurumSupplyZone(base,c,ImpulseATR,zb,zt)) PushZone(sTop,sBot,sTime,zt,zb,time[i+1]);
+      if(AurumDemandZone(base,c,ImpulseATR,zb,zt)) PushZone(dTop,dBot,dTime,dTouch,zt,zb,time[i+1]);
+      if(AurumSupplyZone(base,c,ImpulseATR,zb,zt)) PushZone(sTop,sBot,sTime,sTouch,zt,zb,time[i+1]);
 
       int pk=i+L;   // candle that becomes a confirmed swing point now
       if(PivotHigh(high,pk,L))

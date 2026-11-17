@@ -54,6 +54,8 @@ f_lots(float entry, float stop) =>
     float dist = math.abs(entry - stop)
     dist > 0 ? math.floor(balance * riskPct / 100 / (dist * contractSize) * 100 + 1e-9) / 100.0 : 0.0
 
+f_grade(int g) => g == 0 ? "A" : g == 1 ? "B" : "C"
+
 f_price(float p) => na(p) ? "--" : str.tostring(p, format.mintick)
 f_r(float r) => (r >= 0 ? "+" : "") + str.tostring(r, "#.##") + "R"
 f_money(float m) => "$" + str.tostring(m, "#,##0.##")
@@ -70,6 +72,11 @@ var float tEntry = na
 var float tSL = na
 var float tTP = na
 var string tWhy = ""
+var int tQuality = 0
+var int tGrade = 2
+// Record per grade (A, B, C): used for the WIN CHANCE of a new signal
+var array<int> gradeTrades = array.from(0, 0, 0)
+var array<int> gradeWins = array.from(0, 0, 0)
 // Record of closed trades (R multiples) — the built-in backtest
 var array<float> results = array.new<float>()
 var int lastDir = 0
@@ -97,6 +104,8 @@ if barstate.isconfirmed and inTrade and bar_index > tBar
     if not na(closedR)
         inTrade := false
         array.push(results, closedR)
+        array.set(gradeTrades, tGrade, array.get(gradeTrades, tGrade) + 1)
+        array.set(gradeWins, tGrade, array.get(gradeWins, tGrade) + (closedR > 0 ? 1 : 0))
         lastDir := tDir
         lastExitBar := bar_index
         lastR := closedR
@@ -165,20 +174,23 @@ f_addLevel(array<float> prices, array<int> bars, float price, int barIdx, float 
     0
 
 // Add a zone, replacing overlapping zones, keeping at most cap zones.
-f_addZone(array<float> tops, array<float> bots, array<int> bars, float top, float bot, int barIdx, int cap) =>
+f_addZone(array<float> tops, array<float> bots, array<int> bars, array<int> touches, float top, float bot, int barIdx, int cap) =>
     if array.size(tops) > 0
         for i = array.size(tops) - 1 to 0
             if array.get(bots, i) <= top and array.get(tops, i) >= bot
                 array.remove(tops, i)
                 array.remove(bots, i)
                 array.remove(bars, i)
+                array.remove(touches, i)
     array.push(tops, top)
     array.push(bots, bot)
     array.push(bars, barIdx)
+    array.push(touches, 0)
     while array.size(tops) > cap
         array.shift(tops)
         array.shift(bots)
         array.shift(bars)
+        array.shift(touches)
     0
 
 // Target = next opposite area, capped at max(3, minRR) R; none -> max(2, minRR) R.
@@ -203,9 +215,11 @@ var array<int> supB = array.new<int>()
 var array<float> dTop = array.new<float>()
 var array<float> dBot = array.new<float>()
 var array<int> dBar = array.new<int>()
+var array<int> dTouch = array.new<int>()     // how many candles have entered each demand zone
 var array<float> sTop = array.new<float>()
 var array<float> sBot = array.new<float>()
 var array<int> sBar = array.new<int>()
+var array<int> sTouch = array.new<int>()
 var int skipBar = na
 var string skipText = ""
 // Diagnostics: every setup (a rejection candle at any zone or level) and the FIRST rule that stopped it.
@@ -228,23 +242,29 @@ float newSL = na
 float newTP = na
 int newScore = 0
 string newWhy = ""
+int newQuality = 0          // 0-100, see AurumQuality()
+int newGrade = 2            // 0 = A, 1 = B, 2 = C
 if barstate.isconfirmed and ready
     float tol = TOUCH_ATR * atrPrev
     // SND
     bool inDemand = false
+    bool demandFresh = false
     float demandLow = na
     for [i, top] in dTop
         float bot = array.get(dBot, i)
         if top > bot and low <= top + tol and close > top
             inDemand := true
             demandLow := na(demandLow) ? bot : math.min(demandLow, bot)
+            demandFresh := demandFresh or array.get(dTouch, i) == 0
     bool inSupply = false
+    bool supplyFresh = false
     float supplyHigh = na
     for [i, bot] in sBot
         float top = array.get(sTop, i)
         if top > bot and high >= bot - tol and close < bot
             inSupply := true
             supplyHigh := na(supplyHigh) ? top : math.max(supplyHigh, top)
+            supplyFresh := supplyFresh or array.get(sTouch, i) == 0
     // SNR
     bool atSupport = false
     float supportLow = na
@@ -326,10 +346,30 @@ if barstate.isconfirmed and ready
             newTP := tp
             newScore := dir > 0 ? buyScore : sellScore
             newWhy := why
+            // Quality (information only): same as AurumQuality() / AurumGrade()
+            bool zoneHit = dir > 0 ? inDemand : inSupply
+            bool levelHit = dir > 0 ? atSupport : atResistance
+            bool fresh = dir > 0 ? demandFresh : supplyFresh
+            float rr = math.abs(tp - entry) / math.abs(entry - sl)
+            int q = zoneHit and levelHit ? 35 : zoneHit ? 25 : levelHit ? 10 : 0
+            q += zoneHit and fresh ? 20 : 0
+            q += rr >= 2.5 ? 25 : rr >= 2.0 ? 20 : rr >= 1.5 ? 12 : 5
+            q += inLondon and inNewYork ? 20 : inLondon or inNewYork ? 12 : 0
+            newQuality := q
+            newGrade := q >= 70 ? 0 : q >= 50 ? 1 : 2
+            newWhy := why + (zoneHit and fresh ? " (fresh)" : "")
 
 // ---------- 2) Update areas with this closed candle ----------
 if barstate.isconfirmed and ready
     float mergeTol = MERGE_ATR * atrPrev
+    float touchTol = TOUCH_ATR * atrPrev
+    // Count every candle that enters a zone (a zone is "fresh" until its first touch)
+    for [i, top] in dTop
+        if low <= top + touchTol
+            array.set(dTouch, i, array.get(dTouch, i) + 1)
+    for [i, bot] in sBot
+        if high >= bot - touchTol
+            array.set(sTouch, i, array.get(sTouch, i) + 1)
     // Zones die when a candle CLOSES through them
     if array.size(dTop) > 0
         for i = array.size(dTop) - 1 to 0
@@ -337,12 +377,14 @@ if barstate.isconfirmed and ready
                 array.remove(dTop, i)
                 array.remove(dBot, i)
                 array.remove(dBar, i)
+                array.remove(dTouch, i)
     if array.size(sTop) > 0
         for i = array.size(sTop) - 1 to 0
             if close > array.get(sTop, i)
                 array.remove(sTop, i)
                 array.remove(sBot, i)
                 array.remove(sBar, i)
+                array.remove(sTouch, i)
     // SNR role flip: broken resistance becomes support and vice versa
     array<float> toSup = array.new<float>()
     array<int> toSupBar = array.new<int>()
@@ -372,13 +414,13 @@ if barstate.isconfirmed and ready
         float top = math.max(open[1], close[1])
         top := top - bot < 0.2 * atrPrev ? bot + 0.2 * atrPrev : top
         if top - bot <= 2.0 * atrPrev and top < close
-            f_addZone(dTop, dBot, dBar, top, bot, bar_index - 1, maxItems)
+            f_addZone(dTop, dBot, dBar, dTouch, top, bot, bar_index - 1, maxItems)
     if open - close >= impulseATR * atrPrev and close < low[1]
         float top = math.max(high[1], high)
         float bot = math.min(open[1], close[1])
         bot := top - bot < 0.2 * atrPrev ? top - 0.2 * atrPrev : bot
         if top - bot <= 2.0 * atrPrev and bot > close
-            f_addZone(sTop, sBot, sBar, top, bot, bar_index - 1, maxItems)
+            f_addZone(sTop, sBot, sBar, sTouch, top, bot, bar_index - 1, maxItems)
     // New SNR levels from confirmed swing points
     if not na(ph)
         if close < ph
@@ -405,10 +447,12 @@ if newDir != 0
     tSL := newSL
     tTP := newTP
     tWhy := newWhy
+    tQuality := newQuality
+    tGrade := newGrade
     float rr = math.abs(newTP - newEntry) / math.abs(newEntry - newSL)
     float lot = f_lots(newEntry, newSL)
-    string side = (newScore >= 3 ? "STRONG " : "") + (newDir > 0 ? "BUY" : "SELL")
-    string plan = "Entry " + f_price(newEntry) + "\nSL " + f_price(newSL) + "\nTP " + f_price(newTP) + "\nRR 1 : " + str.tostring(rr, "#.#") + "\nWhy: " + newWhy
+    string side = (newDir > 0 ? "BUY " : "SELL ") + f_grade(newGrade)
+    string plan = "Quality " + f_grade(newGrade) + " (" + str.tostring(newQuality) + "/100)\nEntry " + f_price(newEntry) + "\nSL " + f_price(newSL) + "  (-" + str.tostring(riskPct) + "%)\nTP " + f_price(newTP) + "  (+" + str.tostring(rr * riskPct, "#.#") + "%)\nRR 1 : " + str.tostring(rr, "#.#") + "\nWhy: " + newWhy
     if showHistory
         if newDir > 0
             label.new(bar_index, low, side, yloc=yloc.belowbar, style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.small, tooltip=plan)
@@ -419,7 +463,7 @@ if newDir != 0
     float qty = strategy.equity * riskPct / 100 / (math.abs(newEntry - newSL) * syminfo.pointvalue)
     strategy.entry(orderId, newDir > 0 ? strategy.long : strategy.short, qty=qty, comment=orderId)
     strategy.exit("Exit " + orderId, from_entry=orderId, stop=newSL, limit=newTP, comment_loss="SL", comment_profit="TP")
-    alert("Aurum " + side + " " + syminfo.ticker + " " + f_tf(timeframe.period) + " | Entry " + f_price(newEntry) + " | SL " + f_price(newSL) + " | TP " + f_price(newTP) + " | RR 1:" + str.tostring(rr, "#.#") + " | Lot " + str.tostring(lot, "#.##") + " | " + newWhy, alert.freq_once_per_bar_close)
+    alert("Aurum " + (newDir > 0 ? "BUY" : "SELL") + " " + syminfo.ticker + " " + f_tf(timeframe.period) + " | Quality " + f_grade(newGrade) + " " + str.tostring(newQuality) + "/100 | Entry " + f_price(newEntry) + " | SL " + f_price(newSL) + " | TP " + f_price(newTP) + " | RR 1:" + str.tostring(rr, "#.#") + " = +" + str.tostring(rr * riskPct, "#.#") + "% if TP | Lot " + str.tostring(lot, "#.##") + " | " + newWhy, alert.freq_once_per_bar_close)
 
 // ---------- Data window (for checking / exporting results) and alerts ----------
 plot(buySignal ? 1 : sellSignal ? -1 : 0, "Signal: BUY=1 SELL=-1", display=display.data_window)
@@ -555,13 +599,13 @@ string panelPosition = switch panelCorner
     "Bottom left" => position.bottom_left
     "Bottom right" => position.bottom_right
     => position.top_right
-var table panel = table.new(panelPosition, 2, 11, bgcolor=color.new(chart.bg_color, 5), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
+var table panel = table.new(panelPosition, 2, 13, bgcolor=color.new(chart.bg_color, 5), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
 f_row(int row, string name, string value, color valueColor) =>
     table.cell(panel, 0, row, name, text_color=color.gray, text_size=size.small, text_halign=text.align_left)
     table.cell(panel, 1, row, value, text_color=valueColor, text_size=size.small, text_halign=text.align_left)
 
 if barstate.islast
-    table.clear(panel, 0, 0, 1, 10)
+    table.clear(panel, 0, 0, 1, 12)
     color fg = chart.fg_color
     // Header and trend
     table.cell(panel, 0, 0, "AURUM GOLD", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
@@ -583,9 +627,20 @@ if barstate.islast
         float lot = f_lots(tEntry, tSL)
         float riskMoney = balance * riskPct / 100
         f_row(4, "ENTRY", f_price(tEntry) + (age > 1 ? "   (" + str.tostring(age) + " candles ago)" : ""), color.blue)
-        f_row(5, "STOP LOSS", f_price(tSL), SELL_COLOR)
-        f_row(6, "TAKE PROFIT", f_price(tTP) + "   RR 1 : " + str.tostring(rr, "#.#"), BUY_COLOR)
+        f_row(5, "STOP LOSS", f_price(tSL) + "   = −" + str.tostring(riskPct) + "%  (" + f_money(riskMoney) + ")", SELL_COLOR)
+        f_row(6, "TAKE PROFIT", f_price(tTP) + "   = +" + str.tostring(rr * riskPct, "#.#") + "%  (" + f_money(rr * riskMoney) + ")   RR 1 : " + str.tostring(rr, "#.#"), BUY_COLOR)
         f_row(7, "LOT SIZE", lot > 0 ? str.tostring(lot, "#.##") + " lot  =  risk " + f_money(riskMoney) + " (" + str.tostring(riskPct) + "%)" : "0.01 lot risks " + f_money(0.01 * risk * contractSize) + " – more than your " + str.tostring(riskPct) + "%", lot > 0 ? fg : color.orange)
+        color gradeColor = tGrade == 0 ? BUY_COLOR : tGrade == 1 ? color.orange : SELL_COLOR
+        f_row(8, "QUALITY", f_grade(tGrade) + "   " + str.tostring(tQuality) + "/100   ·   " + tWhy, gradeColor)
+        // Win chance = how past signals of the same grade ended (needs 10+ to mean anything)
+        int gN = array.get(gradeTrades, tGrade)
+        int gW = array.get(gradeWins, tGrade)
+        int allN = array.size(results)
+        int allW = 0
+        for r in results
+            allW += r > 0 ? 1 : 0
+        string chance = gN >= 10 ? str.tostring(100.0 * gW / gN, "#") + "%   (" + str.tostring(gW) + " of " + str.tostring(gN) + " past grade-" + f_grade(tGrade) + " signals hit TP)" : "Not enough grade-" + f_grade(tGrade) + " history yet (" + str.tostring(gN) + " trades)" + (allN > 0 ? "  ·  all signals: " + str.tostring(100.0 * allW / allN, "#") + "% of " + str.tostring(allN) : "")
+        f_row(9, "WIN CHANCE", chance, gN >= 10 ? fg : color.gray)
     else
         [kA, tA, bA, sA] = f_areaAbove()
         [kB, tB, bB, sB] = f_areaBelow()
@@ -610,10 +665,15 @@ if barstate.islast
                 wins20 += r > 0 ? 1 : 0
                 total20 += r
         int n20 = n - first20
-        f_row(8, "RECORD", str.tostring(n) + " trades  ·  " + str.tostring(100.0 * wins / n, "#") + "% win  ·  avg " + f_r(total / n) + "  ·  total " + f_r(total), total >= 0 ? BUY_COLOR : SELL_COLOR)
-        f_row(9, "LAST " + str.tostring(n20), str.tostring(100.0 * wins20 / n20, "#") + "% win  ·  total " + f_r(total20), total20 >= 0 ? BUY_COLOR : SELL_COLOR)
+        string byGrade = ""
+        for g = 0 to 2
+            int gt = array.get(gradeTrades, g)
+            if gt > 0
+                byGrade += (byGrade == "" ? "" : "  ") + f_grade(g) + " " + str.tostring(100.0 * array.get(gradeWins, g) / gt, "#") + "% (" + str.tostring(gt) + ")"
+        f_row(10, "RECORD", str.tostring(n) + " trades  ·  " + str.tostring(100.0 * wins / n, "#") + "% win  ·  avg " + f_r(total / n) + "  ·  total " + f_r(total), total >= 0 ? BUY_COLOR : SELL_COLOR)
+        f_row(11, "LAST " + str.tostring(n20), str.tostring(100.0 * wins20 / n20, "#") + "% win  ·  total " + f_r(total20) + "   ·   by grade: " + byGrade, total20 >= 0 ? BUY_COLOR : SELL_COLOR)
     else
-        f_row(8, "RECORD", "No closed trades in the loaded history yet", fg)
+        f_row(10, "RECORD", "No closed trades in the loaded history yet", fg)
     // Why so few trades? Biggest blocker first
     if setupCount > 0
         array<int> counts = array.from(tradedCount, blockTrend, blockWeak, blockSession, blockTarget, blockBusy)
@@ -624,4 +684,4 @@ if barstate.islast
             int c = array.get(counts, idx)
             if c > 0
                 parts += (parts == "" ? "" : "  ·  ") + array.get(names, idx) + " " + str.tostring(c)
-        f_row(10, "SETUPS", str.tostring(setupCount) + " since " + str.format_time(firstBarTime, "d MMM", syminfo.timezone) + ":  " + parts, color.gray)
+        f_row(12, "SETUPS", str.tostring(setupCount) + " since " + str.format_time(firstBarTime, "d MMM", syminfo.timezone) + ":  " + parts, color.gray)

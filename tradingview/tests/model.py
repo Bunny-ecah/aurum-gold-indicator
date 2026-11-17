@@ -82,6 +82,19 @@ def trade_step(side, entry, stop, tp, bar, held, max_bars):
     return None
 
 
+def quality(zone, level, fresh, rr, london, new_york):
+    """Setup quality 0-100 (information only). Same as AurumQuality()."""
+    q = 35 if zone and level else 25 if zone else 10 if level else 0
+    q += 20 if zone and fresh else 0
+    q += 25 if rr >= 2.5 else 20 if rr >= 2.0 else 12 if rr >= 1.5 else 5
+    q += 20 if london and new_york else 12 if london or new_york else 0
+    return q
+
+
+def grade(q):
+    return "A" if q >= 70 else "B" if q >= 50 else "C"
+
+
 def lots(balance, risk_pct, entry, stop, contract=100.0, step=0.01):
     raw = balance * risk_pct / 100.0 / (abs(entry - stop) * contract)
     return int(raw / step + 1e-9) * step

@@ -128,6 +128,14 @@ AURUM_EXPORT int RunTests()
    Check(!AurumTarget(1,2650,2650,0,1.5,tp),"zero risk rejected");
    Check(Near(AurumRR(2650,2645,2660),2.0) && Near(AurumRR(2650,2655,2642.5),1.5),"reward to risk");
 
+   // --- Setup quality
+   Check(AurumQuality(true,true,true,2.5,true,true)==100,"best setup = 100");
+   Check(AurumQuality(true,false,true,2.0,false,true)==77,"fresh zone, RR 2, New York = 77");
+   Check(AurumQuality(true,false,false,1.5,true,false)==49,"used zone, RR 1.5, London = 49");
+   Check(AurumQuality(false,true,true,3.0,true,true)==55,"S/R only: fresh bonus does not apply");
+   Check(AurumQuality(false,true,false,1.2,false,false)==15,"weak setup");
+   Check(AurumGrade(100)==0 && AurumGrade(70)==0 && AurumGrade(69)==1 && AurumGrade(50)==1 && AurumGrade(49)==2,"grades A/B/C");
+
    // --- Trade record
    Check(!AurumTradeStep(1,2650,2645,2660,C(2650,2655,2647,2652),1,100,r),"BUY still open");
    Check(AurumTradeStep(1,2650,2645,2660,C(2652,2661,2650,2658),2,100,r) && Near(r,2.0),"BUY TP hit = +2R");

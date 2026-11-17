@@ -10,7 +10,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from model import POINTS_NEEDED, Settings, lots, record, run, target, trade_step  # noqa: E402
+from model import POINTS_NEEDED, Settings, grade, lots, quality, record, run, target, trade_step  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 PINE = (ROOT / "tradingview" / "AurumSignalAudit.pine").read_text(encoding="utf-8")
@@ -123,7 +123,7 @@ class PineContract(unittest.TestCase):
         self.assertIn("and canOpen    // one trade at a time", PINE)
 
     def test_panel_has_status_and_record(self):
-        for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"LOT SIZE"', '"TAKE PROFIT"', '"SETUPS"', '"SESSION"'):
+        for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"LOT SIZE"', '"TAKE PROFIT"', '"SETUPS"', '"SESSION"', '"QUALITY"', '"WIN CHANCE"'):
             self.assertIn(text, PINE)
 
 
@@ -274,6 +274,28 @@ class TradeRules(unittest.TestCase):
         self.assertEqual(trade_step(1, 2650, 2645, 2660, (2650, 2662, 2644, 2655), 2, 100), -1.0)
         self.assertAlmostEqual(trade_step(1, 2650, 2645, 2660, (2650, 2653, 2648, 2652.5), 100, 100), 0.5)
         self.assertAlmostEqual(trade_step(-1, 2650, 2655, 2640, (2645, 2646, 2639, 2641), 3, 100), 2.0)
+
+    def test_quality(self):
+        self.assertEqual(quality(True, True, True, 2.5, True, True), 100)
+        self.assertEqual(quality(True, False, True, 2.0, False, True), 77)
+        self.assertEqual(quality(True, False, False, 1.5, True, False), 49)
+        self.assertEqual(quality(False, True, True, 3.0, True, True), 55)
+        self.assertEqual(quality(False, True, False, 1.2, False, False), 15)
+        self.assertEqual([grade(q) for q in (100, 70, 69, 50, 49)], ["A", "A", "B", "B", "C"])
+
+    def test_quality_formula_matches_pine(self):
+        for line in ("int q = zoneHit and levelHit ? 35 : zoneHit ? 25 : levelHit ? 10 : 0",
+                     "q += zoneHit and fresh ? 20 : 0",
+                     "q += rr >= 2.5 ? 25 : rr >= 2.0 ? 20 : rr >= 1.5 ? 12 : 5",
+                     "q += inLondon and inNewYork ? 20 : inLondon or inNewYork ? 12 : 0",
+                     "newGrade := q >= 70 ? 0 : q >= 50 ? 1 : 2"):
+            self.assertIn(line, PINE)
+        self.assertIn("int q=(zone && level)?35:zone?25:level?10:0;", CORE)
+        self.assertIn("return quality>=70?0:quality>=50?1:2;", CORE)
+        # zone freshness is tracked alongside every zone array
+        for arr in ("dTouch", "sTouch"):
+            self.assertIn(arr, PINE)
+            self.assertIn(arr, MQ5)
 
     def test_lots(self):
         self.assertAlmostEqual(lots(1000, 1, 2650, 2645), 0.02)

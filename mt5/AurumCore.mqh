@@ -179,6 +179,25 @@ double AurumRR(const double entry,const double stop,const double tp)
    return risk>0?AurumAbs(tp-entry)/risk:0;
 }
 
+// ---------- Setup quality (information only: it does not change which signals appear) ----------
+// Score out of 100:
+//   Area:    zone + S/R level 35, zone 25, S/R level only 10
+//   Fresh:   +20 when the zone is touched for the first time (zone setups only)
+//   Reward:  RR >= 2.5 -> 25, >= 2.0 -> 20, >= 1.5 -> 12, else 5
+//   Timing:  London and New York both open 20, one of them 12, neither 0
+int AurumQuality(const bool zone,const bool level,const bool fresh,const double rr,
+                 const bool london,const bool newYork)
+{
+   int q=(zone && level)?35:zone?25:level?10:0;
+   if(zone && fresh) q+=20;
+   q+=rr>=2.5?25:rr>=2.0?20:rr>=1.5?12:5;
+   q+=(london && newYork)?20:(london || newYork)?12:0;
+   return q;
+}
+
+// 0 = A (70+), 1 = B (50-69), 2 = C (below 50)
+int AurumGrade(const int quality) { return quality>=70?0:quality>=50?1:2; }
+
 // ---------- Trade record (also used for backtesting) ----------
 // Follow an open trade for one closed candle. Returns true when the trade closes and sets
 // resultR (+R won, -1 lost). Stop loss is checked first, so a candle that touches both the

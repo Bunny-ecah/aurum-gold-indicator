@@ -16,7 +16,8 @@ Earlier TradingView sources are retained for comparison: basic indicator, multi-
 - **One clear STATUS:** BUY NOW / SELL NOW / IN TRADE / WAIT, and what to wait for next.
 - **Session filter:** new trades only in London and/or New York hours (daylight saving handled).
 - **SNR + SND:** support/resistance from swing points and supply/demand zones from strong impulse candles. Only the nearest area above and below price is drawn.
-- **Trade plan:** entry, stop loss, take profit, reward-to-risk and **lot size** for your balance and risk %. Setups with too little room to the target are skipped.
+- **Trade plan:** entry, stop loss, take profit, reward-to-risk, **% profit/loss of your balance** and **lot size** for your balance and risk %.
+- **Quality grade A/B/C** (score out of 100) for each signal, and a **win chance** taken from how past signals of the same grade ended. Setups with too little room to the target are skipped.
 - **SETUPS:** counts every reaction at a zone or level and the rule that stopped it, so you can see why there are few signals.
 - **RECORD:** every signal is followed to its result, giving win %, average R and total R on the loaded history: a built-in backtest of the rules.
 - **All-in-one TradingView script:** the same script also runs in the Strategy Tester (net profit, drawdown, profit factor, with costs), so it needs only one saved script.
@@ -53,7 +54,7 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_tradingview.py
 ```
 
-This runs 29 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+This runs 31 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 
@@ -61,7 +62,7 @@ For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual St
 mt5\tests\run-tests.cmd
 ```
 
-On Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN mt5/tests/core_tests.cpp -o core_tests && ./core_tests`. The harness compiles the shared `AurumCore.mqh` as C++; the recorded run passed 114 checks. This does not test MT5 event integration or a strategy's performance.
+On Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN mt5/tests/core_tests.cpp -o core_tests && ./core_tests`. The harness compiles the shared `AurumCore.mqh` as C++; the recorded run passed 120 checks. This does not test MT5 event integration or a strategy's performance.
 
 ## Remaining work
 

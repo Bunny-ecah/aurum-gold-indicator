@@ -21,6 +21,9 @@ Recommended start: **XAUUSD 15m chart** (trend from 4H) or **5m** (trend from 1H
 | **STATUS** | **BUY NOW / SELL NOW** = a signal just closed: the trade plan is below. **IN BUY / SELL TRADE** = a signal is still running. **WAIT** = do nothing yet. |
 | ENTRY / STOP LOSS / TAKE PROFIT | The plan for the open signal, with its reward-to-risk (RR 1 : 2 means you win 2 for every 1 you risk). |
 | LOT SIZE | Lot size so that hitting the stop loss costs your risk % of the balance. |
+| STOP LOSS / TAKE PROFIT % | What you lose (−1%) or gain (for example +2.4%) of your balance if the stop or target is hit, with the money amount. |
+| **QUALITY** | Grade A / B / C and a score out of 100 (see below). |
+| **WIN CHANCE** | How often past signals of the **same grade** hit their target on this chart. Shown only after 10+ such trades. |
 | NEXT | When waiting: which zone to watch and what candle you need. |
 | NOTE | A setup was skipped because the target was too close (not worth the risk). |
 | LAST TRADE | How the previous signal ended. |
@@ -31,7 +34,7 @@ Recommended start: **XAUUSD 15m chart** (trend from 4H) or **5m** (trend from 1H
 ## On the chart
 
 - **One red area above price and one green area below.** These are the nearest Supply/Resistance (where SELLs come from) and Demand/Support (where BUYs come from). Turn on *Show all nearby zones and levels* to see more.
-- **BUY / SELL labels** at each signal. Hover a label (TradingView) to see its entry, stop, target and reason. *STRONG* means a zone and an S/R level agreed.
+- **BUY A / SELL B labels** at each signal: the letter is the quality grade. Hover a label (TradingView) to see quality, entry, stop, target, % profit and reason.
 - **Result text** where each trade ended, for example `TP +2.0R` or `SL -1.00R`.
 - **Red and green boxes** for the open trade: red = what you risk, green = what you aim to win.
 
@@ -50,6 +53,25 @@ A **SELL** is the mirror image.
 **Stop loss:** just beyond the area that was touched (+0.2 ATR), at least 0.5 ATR from entry.
 **Take profit:** the next opposite area, capped at 3R. No area ahead → 2R.
 **One trade at a time.** A new signal can only appear after the current one ends.
+
+## Quality grade and win chance
+
+Every signal gets a score out of 100 from four simple checks:
+
+| Check | Points |
+| --- | --- |
+| **Area:** zone + S/R level together / zone only / S/R level only | 35 / 25 / 10 |
+| **Fresh zone:** first time price comes back to the zone | +20 |
+| **Reward:** RR 2.5+ / 2.0+ / 1.5+ / lower | 25 / 20 / 12 / 5 |
+| **Timing:** London and New York both open / one of them / neither | 20 / 12 / 0 |
+
+**A** = 70–100, **B** = 50–69, **C** = below 50. The grade is information only: it does not hide signals.
+
+**Win chance** is not a guess or a promise. It is the real result of past signals with the same grade on the loaded chart history, for example *"58% (7 of 12 past grade-A signals hit TP)"*. With fewer than 10 such trades it says "not enough history" because a few trades prove nothing. The RECORD row also shows the win % per grade.
+
+**Profit %** = reward-to-risk × your risk %. With 1% risk and RR 1 : 2.4, the target is **+2.4%** of your balance and the stop is **−1%**.
+
+How to use it: after your backtest, if grade A wins clearly more often than C, consider only trading A and B signals.
 
 ## Too few signals? Read the SETUPS row
 
@@ -132,7 +154,7 @@ Other ways to test:
 
 TradingView: create an alert on the script and pick **alert() function calls only**. The message has everything:
 
-`Aurum BUY XAUUSD 15m | Entry 4082.50 | SL 4076.20 | TP 4095.10 | RR 1:2.0 | Lot 0.01 | Demand`
+`Aurum BUY XAUUSD 15m | Quality A 77/100 | Entry 4082.50 | SL 4076.20 | TP 4095.10 | RR 1:2.0 = +2.0% if TP | Lot 0.01 | Demand (fresh)`
 
 Recreate alerts after changing the script or settings.
 
