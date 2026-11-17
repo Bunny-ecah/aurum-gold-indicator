@@ -32,6 +32,18 @@ By year: 2012 +0.9 · 2013 +3.6 · 2014 −0.9 · 2015 +4.1 · 2016 +3.0 · 2017
 
 With a 0.50 spread instead of 0.30: profit factor 1.13, +19.0R.
 
+### 30m chart
+
+30m was tested afterwards with the same method. It only works with **its own settings**: Balanced, **New York session only**, **trend timeframe 1H** (60), swing Large, stop buffer 0.5, minimum reward 1.2.
+
+| Setup (2012–2022) | Trades/month | Win % | Profit factor 2012–15 / 2016–19 / 2020–22 | Total | $1,000 at 1% risk | Worst drawdown |
+| --- | --- | --- | --- | --- | --- | --- |
+| **1H, recommended settings** | 2.1 | 43% | 1.15 / 1.21 / 1.16 | +26.9R | $1,280 | −11.2% |
+| **30m, own settings** | 2.4 | 44% | 1.27 / 1.13 / 1.35 | +39.7R | $1,449 | −11.5% |
+| 30m with the 1H settings | 4.0 | 41% | 1.37 / 1.03 / **0.78** | +30.7R | $1,302 | −20.8% |
+
+The 30m setup was found after more settings had been tried (on 30m too), so there is a bit more chance it is luck. 1H stays the main setup; 30m (own settings) is a good second demo test.
+
 ### What did not work
 
 | Settings | Profit factor | Total |
