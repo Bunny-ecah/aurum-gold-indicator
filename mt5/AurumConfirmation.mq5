@@ -369,9 +369,9 @@ void RenderPanel()
 {
    if(prefix=="") return;
    int lineH=PanelFontSize+8;
-   int width=(int)MathMin(640,MathMax(360,(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)-PanelX-16));
-   string rows[14]; color cols[14];
-   for(int i=0;i<14;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
+   int width=(int)MathMin(520,MathMax(360,(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)-PanelX-16));
+   string rows[16]; color cols[16];
+   for(int i=0;i<16;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
 
    rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF); cols[0]=clrGold;
    rows[1]="TREND        "+(trendNow>0?"UP   only BUY":trendNow<0?"DOWN   only SELL":"FLAT   no trades");
@@ -429,35 +429,36 @@ void RenderPanel()
          total+=results[i];
          if(i>=first20) { if(results[i]>0) wins20++; total20+=results[i]; }
       }
-      int n20=n-first20;
-      rows[10]="RECORD       "+IntegerToString(n)+" trades  "+DoubleToString(100.0*wins/n,0)+"% win  avg "+RText(total/n)+"  total "+RText(total);
+      rows[10]="RECORD       "+IntegerToString(n)+" trades  "+DoubleToString(100.0*wins/n,0)+"% win  "+RText(total);
       cols[10]=total>=0?clrMediumSeaGreen:clrTomato;
       string byGrade="";
-      for(int g=0;g<3;g++) if(gradeTrades[g]>0) byGrade+=(byGrade==""?"":"  ")+GradeText(g)+" "+DoubleToString(100.0*gradeWins[g]/gradeTrades[g],0)+"% ("+IntegerToString(gradeTrades[g])+")";
-      rows[11]="LAST "+IntegerToString(n20)+"      "+DoubleToString(100.0*wins20/n20,0)+"% win  total "+RText(total20)+"   by grade: "+byGrade;
-      cols[11]=total20>=0?clrMediumSeaGreen:clrTomato;
+      for(int g=0;g<3;g++) byGrade+=(g==0?"":"  ")+GradeText(g)+" "+(gradeTrades[g]>0?DoubleToString(100.0*gradeWins[g]/gradeTrades[g],0)+"% ("+IntegerToString(gradeTrades[g])+")":"-");
+      rows[11]="BY GRADE     "+byGrade;
+      if(n>20) { rows[12]="LAST 20      "+DoubleToString(100.0*wins20/20,0)+"% win  "+RText(total20); cols[12]=total20>=0?clrMediumSeaGreen:clrTomato; }
    }
-   else rows[10]="RECORD       No closed trades in the scanned history yet";
-   string live; LiveGate(live);
-   rows[13]="ALERTS       "+delivery+"  |  "+live; cols[13]=clrSilver;
-   // Why so few trades? Biggest blocker first
+   else rows[10]="RECORD       no closed trades yet";
+   // Why so few trades? Top 3 blockers
    if(setupCount>0)
    {
-      int counts[6]; string names[6]; int idx[6];
-      counts[0]=tradedCount; counts[1]=blockTrend; counts[2]=blockWeak; counts[3]=blockSession; counts[4]=blockTarget; counts[5]=blockBusy;
-      names[0]="traded"; names[1]="trend"; names[2]="area too weak"; names[3]="session"; names[4]="target too close"; names[5]="trade open";
-      for(int a=0;a<6;a++) idx[a]=a;
-      for(int a=0;a<6;a++) for(int b=a+1;b<6;b++) if(counts[idx[b]]>counts[idx[a]]) { int t=idx[a]; idx[a]=idx[b]; idx[b]=t; }
+      rows[13]="SETUPS       "+IntegerToString(setupCount)+" since "+TimeToString(firstBarTime,TIME_DATE)+"  "+IntegerToString(tradedCount)+" traded";
+      cols[13]=clrSilver;
+      int counts[5]; string names[5]; int idx[5];
+      counts[0]=blockTrend; counts[1]=blockWeak; counts[2]=blockSession; counts[3]=blockTarget; counts[4]=blockBusy;
+      names[0]="trend"; names[1]="weak area"; names[2]="session"; names[3]="target"; names[4]="trade open";
+      for(int a=0;a<5;a++) idx[a]=a;
+      for(int a=0;a<5;a++) for(int b=a+1;b<5;b++) if(counts[idx[b]]>counts[idx[a]]) { int t=idx[a]; idx[a]=idx[b]; idx[b]=t; }
       string parts="";
-      for(int a=0;a<6;a++) if(counts[idx[a]]>0) parts+=(parts==""?"":"  ")+names[idx[a]]+" "+IntegerToString(counts[idx[a]]);
-      rows[12]="SETUPS       "+IntegerToString(setupCount)+" since "+TimeToString(firstBarTime,TIME_DATE)+":  "+parts;
-      cols[12]=clrSilver;
+      for(int a=0;a<3;a++) if(counts[idx[a]]>0) parts+=(parts==""?"":"  ")+names[idx[a]]+" "+IntegerToString(counts[idx[a]]);
+      rows[14]="BLOCKED BY   "+parts;
+      cols[14]=clrSilver;
    }
+   string live; LiveGate(live);
+   rows[15]="ALERTS       "+delivery+"  |  "+live; cols[15]=clrSilver;
 
-   PanelRect(prefix+"pbg",PanelX,PanelY,width,16*lineH,C'25,30,38');
+   PanelRect(prefix+"pbg",PanelX,PanelY,width,18*lineH,C'25,30,38');
    int statusH=PanelFontSize*2+12;
    int y=PanelY+8;
-   for(int i=0;i<14;i++)
+   for(int i=0;i<16;i++)
    {
       if(i==3)
       {

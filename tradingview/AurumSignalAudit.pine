@@ -39,6 +39,7 @@ float riskPct = input.float(1.0, "Risk per trade (%)", minval=0.1, maxval=10, st
 bool showAll = input.bool(false, "Show all nearby zones and levels", display=display.none, group="3. Display", tooltip="Off: only the nearest area above and below price (clean chart).")
 bool showHistory = input.bool(true, "Show past signals and results", display=display.none, group="3. Display")
 string panelCorner = input.string("Top right", "Panel position", options=["Top right", "Bottom right", "Top left", "Bottom left"], display=display.none, group="3. Display")
+string panelSize = input.string("Full", "Panel", options=["Full", "Compact", "Hidden"], display=display.none, group="3. Display", tooltip="Full: plan + record + setups.\nCompact: trend, session, status and the trade plan only.")
 
 // ---------- 4. Advanced (defaults are fine) ----------
 float impulseATR = input.float(1.5, "Zone impulse: candle body ≥ ATR ×", minval=0.5, maxval=5, step=0.1, display=display.none, group="4. Advanced")
@@ -594,94 +595,94 @@ if barstate.islast
         array.push(drawLabels, label.new(x2, tSL, "SL " + f_price(tSL), style=label.style_label_left, color=SELL_COLOR, textcolor=color.white, size=size.tiny))
 
 // ---------- Panel ----------
+// Short rows so the panel stays narrow and does not cover the chart.
 string panelPosition = switch panelCorner
     "Top left" => position.top_left
     "Bottom left" => position.bottom_left
     "Bottom right" => position.bottom_right
     => position.top_right
-var table panel = table.new(panelPosition, 2, 13, bgcolor=color.new(chart.bg_color, 5), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
+var table panel = table.new(panelPosition, 2, 15, bgcolor=color.new(chart.bg_color, 5), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
 f_row(int row, string name, string value, color valueColor) =>
     table.cell(panel, 0, row, name, text_color=color.gray, text_size=size.small, text_halign=text.align_left)
     table.cell(panel, 1, row, value, text_color=valueColor, text_size=size.small, text_halign=text.align_left)
+f_p(float p) => str.tostring(p, "#.##")
+f_pct(float r) => (r >= 0 ? "+" : "−") + str.tostring(math.abs(r), "#.#") + "%"
 
 if barstate.islast
-    table.clear(panel, 0, 0, 1, 12)
+    table.clear(panel, 0, 0, 1, 14)
+if barstate.islast and panelSize != "Hidden"
     color fg = chart.fg_color
-    // Header and trend
+    bool full = panelSize == "Full"
     table.cell(panel, 0, 0, "AURUM GOLD", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
-    table.cell(panel, 1, 0, syminfo.ticker + " " + f_tf(timeframe.period) + "  ·  trend " + f_tf(htf), text_color=fg, text_size=size.small, text_halign=text.align_left)
-    string trendText = trendDir > 0 ? "UP ▲   only BUY" : trendDir < 0 ? "DOWN ▼   only SELL" : "FLAT   no trades"
-    f_row(1, "TREND", trendText, trendDir > 0 ? BUY_COLOR : trendDir < 0 ? SELL_COLOR : color.gray)
-    string nowSession = inLondon and inNewYork ? "London + New York" : inLondon ? "London" : inNewYork ? "New York" : "Asia / off-hours"
-    string sessionText = not sessionFilterOn ? nowSession + "   (filter off)" : sessionOK ? nowSession + "   ✓ trading" : nowSession + "   ✗ no new trades"
-    f_row(2, "SESSION", sessionText, not sessionFilterOn ? fg : sessionOK ? BUY_COLOR : color.orange)
+    table.cell(panel, 1, 0, syminfo.ticker + " " + f_tf(timeframe.period) + " · trend " + f_tf(htf), text_color=fg, text_size=size.small, text_halign=text.align_left)
+    f_row(1, "TREND", trendDir > 0 ? "UP ▲  only BUY" : trendDir < 0 ? "DOWN ▼  only SELL" : "FLAT  no trades", trendDir > 0 ? BUY_COLOR : trendDir < 0 ? SELL_COLOR : color.gray)
+    string nowSession = inLondon and inNewYork ? "London + New York" : inLondon ? "London" : inNewYork ? "New York" : "Asia / closed"
+    f_row(2, "SESSION", nowSession + (not sessionFilterOn ? "  (filter off)" : sessionOK ? "  ✓" : "  ✗ no new trades"), not sessionFilterOn ? fg : sessionOK ? BUY_COLOR : color.orange)
     // Status: the one thing to look at
     int age = inTrade ? bar_index - tBar : na
-    string status = inTrade ? (age <= 1 ? (tDir > 0 ? "BUY NOW" : "SELL NOW") : (tDir > 0 ? "IN BUY TRADE" : "IN SELL TRADE")) : "WAIT"
-    color statusBg = inTrade ? (tDir > 0 ? BUY_COLOR : SELL_COLOR) : color.gray
+    string status = inTrade ? (age <= 1 ? (tDir > 0 ? "BUY NOW" : "SELL NOW") : (tDir > 0 ? "IN BUY" : "IN SELL")) : "WAIT"
     table.cell(panel, 0, 3, "STATUS", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
-    table.cell(panel, 1, 3, status, text_color=color.white, bgcolor=statusBg, text_size=size.large, text_halign=text.align_center)
+    table.cell(panel, 1, 3, status, text_color=color.white, bgcolor=inTrade ? (tDir > 0 ? BUY_COLOR : SELL_COLOR) : color.gray, text_size=size.large, text_halign=text.align_center)
     if inTrade
         float risk = math.abs(tEntry - tSL)
         float rr = math.abs(tTP - tEntry) / risk
         float lot = f_lots(tEntry, tSL)
         float riskMoney = balance * riskPct / 100
-        f_row(4, "ENTRY", f_price(tEntry) + (age > 1 ? "   (" + str.tostring(age) + " candles ago)" : ""), color.blue)
-        f_row(5, "STOP LOSS", f_price(tSL) + "   = −" + str.tostring(riskPct) + "%  (" + f_money(riskMoney) + ")", SELL_COLOR)
-        f_row(6, "TAKE PROFIT", f_price(tTP) + "   = +" + str.tostring(rr * riskPct, "#.#") + "%  (" + f_money(rr * riskMoney) + ")   RR 1 : " + str.tostring(rr, "#.#"), BUY_COLOR)
-        f_row(7, "LOT SIZE", lot > 0 ? str.tostring(lot, "#.##") + " lot  =  risk " + f_money(riskMoney) + " (" + str.tostring(riskPct) + "%)" : "0.01 lot risks " + f_money(0.01 * risk * contractSize) + " – more than your " + str.tostring(riskPct) + "%", lot > 0 ? fg : color.orange)
-        color gradeColor = tGrade == 0 ? BUY_COLOR : tGrade == 1 ? color.orange : SELL_COLOR
-        f_row(8, "QUALITY", f_grade(tGrade) + "   " + str.tostring(tQuality) + "/100   ·   " + tWhy, gradeColor)
+        f_row(4, "ENTRY", f_p(tEntry) + (age > 1 ? "  (" + str.tostring(age) + " candles ago)" : ""), color.blue)
+        f_row(5, "STOP LOSS", f_p(tSL) + "  " + f_pct(-riskPct) + " (" + f_money(riskMoney) + ")", SELL_COLOR)
+        f_row(6, "TAKE PROFIT", f_p(tTP) + "  " + f_pct(rr * riskPct) + " (" + f_money(rr * riskMoney) + ")", BUY_COLOR)
+        f_row(7, "RR · LOT", "1 : " + str.tostring(rr, "#.#") + "  ·  " + (lot > 0 ? str.tostring(lot, "#.##") + " lot" : "0.01 lot = " + f_money(0.01 * risk * contractSize) + " risk"), lot > 0 ? fg : color.orange)
+        f_row(8, "QUALITY", f_grade(tGrade) + "  " + str.tostring(tQuality) + "/100  ·  " + tWhy, tGrade == 0 ? BUY_COLOR : tGrade == 1 ? color.orange : SELL_COLOR)
         // Win chance = how past signals of the same grade ended (needs 10+ to mean anything)
         int gN = array.get(gradeTrades, tGrade)
         int gW = array.get(gradeWins, tGrade)
-        int allN = array.size(results)
-        int allW = 0
-        for r in results
-            allW += r > 0 ? 1 : 0
-        string chance = gN >= 10 ? str.tostring(100.0 * gW / gN, "#") + "%   (" + str.tostring(gW) + " of " + str.tostring(gN) + " past grade-" + f_grade(tGrade) + " signals hit TP)" : "Not enough grade-" + f_grade(tGrade) + " history yet (" + str.tostring(gN) + " trades)" + (allN > 0 ? "  ·  all signals: " + str.tostring(100.0 * allW / allN, "#") + "% of " + str.tostring(allN) : "")
-        f_row(9, "WIN CHANCE", chance, gN >= 10 ? fg : color.gray)
+        f_row(9, "WIN CHANCE", gN >= 10 ? str.tostring(100.0 * gW / gN, "#") + "%  (" + str.tostring(gW) + "/" + str.tostring(gN) + " past grade " + f_grade(tGrade) + ")" : "too few grade-" + f_grade(tGrade) + " trades yet (" + str.tostring(gN) + ")", gN >= 10 ? fg : color.gray)
     else
         [kA, tA, bA, sA] = f_areaAbove()
         [kB, tB, bB, sB] = f_areaBelow()
-        string nextText = sessionFilterOn and not sessionOK ? "Outside " + sessionInput + " – no new trades until the session opens" : trendDir > 0 ? (kB == 0 ? "No buy area below – wait" : "Wait for a dip into " + f_areaText(kB, tB, bB, false) + ", then a bullish candle") : trendDir < 0 ? (kA == 0 ? "No sell area above – wait" : "Wait for a rally into " + f_areaText(kA, tA, bA, true) + ", then a bearish candle") : "Trend is flat – no trades until it turns"
+        string nextText = sessionFilterOn and not sessionOK ? "Wait for " + sessionInput + " to open" : trendDir > 0 ? (kB == 0 ? "No buy area below" : "Dip into " + (kB == 1 ? "Demand " + f_p(bB) + "–" + f_p(tB) : "Support " + f_p(tB)) + " + bullish candle") : trendDir < 0 ? (kA == 0 ? "No sell area above" : "Rally into " + (kA == 1 ? "Supply " + f_p(bA) + "–" + f_p(tA) : "Resistance " + f_p(tA)) + " + bearish candle") : "Wait for the trend to turn"
         f_row(4, "NEXT", nextText, fg)
-        if not na(skipBar) and bar_index - skipBar <= 10
+        // A NOTE only when it adds something (not "outside session" while the session is closed anyway)
+        bool sessionNote = str.contains(skipText, "outside")
+        if not na(skipBar) and bar_index - skipBar <= 10 and not (sessionNote and not sessionOK)
             f_row(5, "NOTE", skipText, color.orange)
-        string lastText = na(lastExitBar) ? "No closed trades yet" : (lastDir > 0 ? "BUY → " : "SELL → ") + lastHow + " " + f_r(lastR) + "   (" + str.tostring(bar_index - lastExitBar) + " candles ago)"
-        f_row(6, "LAST TRADE", lastText, na(lastR) ? fg : lastR > 0 ? BUY_COLOR : SELL_COLOR)
-    // Record = built-in backtest on the loaded history
-    int n = array.size(results)
-    if n > 0
-        int wins = 0
-        float total = 0.0
-        int wins20 = 0
-        float total20 = 0.0
-        int first20 = math.max(0, n - 20)
-        for [i, r] in results
-            wins += r > 0 ? 1 : 0
-            total += r
-            if i >= first20
-                wins20 += r > 0 ? 1 : 0
-                total20 += r
-        int n20 = n - first20
-        string byGrade = ""
-        for g = 0 to 2
-            int gt = array.get(gradeTrades, g)
-            if gt > 0
-                byGrade += (byGrade == "" ? "" : "  ") + f_grade(g) + " " + str.tostring(100.0 * array.get(gradeWins, g) / gt, "#") + "% (" + str.tostring(gt) + ")"
-        f_row(10, "RECORD", str.tostring(n) + " trades  ·  " + str.tostring(100.0 * wins / n, "#") + "% win  ·  avg " + f_r(total / n) + "  ·  total " + f_r(total), total >= 0 ? BUY_COLOR : SELL_COLOR)
-        f_row(11, "LAST " + str.tostring(n20), str.tostring(100.0 * wins20 / n20, "#") + "% win  ·  total " + f_r(total20) + "   ·   by grade: " + byGrade, total20 >= 0 ? BUY_COLOR : SELL_COLOR)
-    else
-        f_row(10, "RECORD", "No closed trades in the loaded history yet", fg)
-    // Why so few trades? Biggest blocker first
-    if setupCount > 0
-        array<int> counts = array.from(tradedCount, blockTrend, blockWeak, blockSession, blockTarget, blockBusy)
-        array<string> names = array.from("traded", "trend", "area too weak", "session", "target too close", "trade open")
-        array<int> ranked = array.sort_indices(counts, order.descending)
-        string parts = ""
-        for idx in ranked
-            int c = array.get(counts, idx)
-            if c > 0
-                parts += (parts == "" ? "" : "  ·  ") + array.get(names, idx) + " " + str.tostring(c)
-        f_row(12, "SETUPS", str.tostring(setupCount) + " since " + str.format_time(firstBarTime, "d MMM", syminfo.timezone) + ":  " + parts, color.gray)
+        if not na(lastExitBar)
+            f_row(6, "LAST TRADE", (lastDir > 0 ? "BUY → " : "SELL → ") + lastHow + " " + f_r(lastR) + "  (" + str.tostring(bar_index - lastExitBar) + " candles ago)", lastR > 0 ? BUY_COLOR : lastR < 0 ? SELL_COLOR : fg)
+    if full
+        // Record = built-in backtest on the loaded history
+        int n = array.size(results)
+        if n > 0
+            int wins = 0
+            float total = 0.0
+            int wins20 = 0
+            float total20 = 0.0
+            int first20 = math.max(0, n - 20)
+            for [i, r] in results
+                wins += r > 0 ? 1 : 0
+                total += r
+                if i >= first20
+                    wins20 += r > 0 ? 1 : 0
+                    total20 += r
+            f_row(10, "RECORD", str.tostring(n) + " trades · " + str.tostring(100.0 * wins / n, "#") + "% win · " + f_r(total), total >= 0 ? BUY_COLOR : SELL_COLOR)
+            string byGrade = ""
+            for g = 0 to 2
+                int gt = array.get(gradeTrades, g)
+                byGrade += (g == 0 ? "" : " · ") + f_grade(g) + " " + (gt > 0 ? str.tostring(100.0 * array.get(gradeWins, g) / gt, "#") + "% (" + str.tostring(gt) + ")" : "–")
+            f_row(11, "BY GRADE", byGrade, fg)
+            if n > 20
+                f_row(12, "LAST 20", str.tostring(100.0 * wins20 / 20, "#") + "% win · " + f_r(total20), total20 >= 0 ? BUY_COLOR : SELL_COLOR)
+        else
+            f_row(10, "RECORD", "no closed trades yet", fg)
+        // Why so few trades? Top 3 blockers
+        if setupCount > 0
+            f_row(13, "SETUPS", str.tostring(setupCount) + " since " + str.format_time(firstBarTime, "d MMM", syminfo.timezone) + " · " + str.tostring(tradedCount) + " traded", color.gray)
+            array<int> counts = array.from(blockTrend, blockWeak, blockSession, blockTarget, blockBusy)
+            array<string> names = array.from("trend", "weak area", "session", "target", "trade open")
+            array<int> ranked = array.sort_indices(counts, order.descending)
+            string parts = ""
+            for k = 0 to 2
+                int idx = array.get(ranked, k)
+                int c = array.get(counts, idx)
+                if c > 0
+                    parts += (parts == "" ? "" : " · ") + array.get(names, idx) + " " + str.tostring(c)
+            f_row(14, "BLOCKED BY", parts, color.gray)

@@ -28,8 +28,9 @@ Recommended start: **XAUUSD 15m chart** (trend from 4H) or **5m** (trend from 1H
 | NOTE | A setup was skipped because the target was too close (not worth the risk). |
 | LAST TRADE | How the previous signal ended. |
 | **RECORD** | Every closed signal in the loaded history: win %, average R, total R. |
-| LAST 20 | The same, for the 20 most recent signals: is it working *now*? |
-| **SETUPS** | Why there are few trades: every time price reacted at a zone or level, the first rule that stopped it, biggest first. |
+| **BY GRADE** | Win % and number of trades for grade A, B and C. |
+| LAST 20 | Shown once there are more than 20 trades. |
+| **SETUPS / BLOCKED BY** | How many times price reacted at a zone or level, how many became trades, and the 3 rules that stopped the most. |
 
 ## On the chart
 
@@ -170,6 +171,7 @@ Recreate alerts after changing the script or settings.
 | 2. Risk | Account balance ($) *(TradingView only; MT5 reads it from the account)* | 1000 |
 | | Risk per trade (%) | 1 |
 | 3. Display | Show all nearby zones and levels | off |
+| | Panel: Full / Compact / Hidden | Full |
 | | Show past signals and results | on |
 | 4. Advanced | Zone impulse, stop buffer, minimum stop, items kept, ATR period, trade time limit, contract size (100 oz) | keep defaults |
 

@@ -110,7 +110,7 @@ class PineContract(unittest.TestCase):
                 self.assertIn(f"if array.size({name}) > 0", lines[i - 1], line)
 
     def test_inputs_are_few(self):
-        self.assertLessEqual(PINE.count("= input."), 17)
+        self.assertLessEqual(PINE.count("= input."), 18)
 
     def test_trade_rules_match_core(self):
         # Target: cap max(3, minRR), fallback max(2, minRR); stop loss checked before target
@@ -123,7 +123,7 @@ class PineContract(unittest.TestCase):
         self.assertIn("and canOpen    // one trade at a time", PINE)
 
     def test_panel_has_status_and_record(self):
-        for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"LOT SIZE"', '"TAKE PROFIT"', '"SETUPS"', '"SESSION"', '"QUALITY"', '"WIN CHANCE"'):
+        for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"RR · LOT"', '"TAKE PROFIT"', '"SETUPS"', '"SESSION"', '"QUALITY"', '"WIN CHANCE"', '"BLOCKED BY"', '"BY GRADE"'):
             self.assertIn(text, PINE)
 
 
