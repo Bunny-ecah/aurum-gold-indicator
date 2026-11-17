@@ -1,5 +1,5 @@
 //@version=6
-strategy("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=60, max_labels_count=500, initial_capital=1000, currency=currency.USD, default_qty_type=strategy.fixed, commission_type=strategy.commission.cash_per_contract, commission_value=0.15, slippage=0, process_orders_on_close=true, margin_long=1, margin_short=1, pyramiding=0)
+strategy("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=60, max_labels_count=500, initial_capital=1000, currency=currency.USD, default_qty_type=strategy.fixed, commission_type=strategy.commission.cash_per_contract, commission_value=0.15, slippage=0, process_orders_on_close=true, calc_on_every_tick=true, margin_long=1, margin_short=1, pyramiding=0)
 
 // =====================================================================
 // AURUM GOLD v6 — simple supply/demand + support/resistance signals for XAUUSD
@@ -19,6 +19,8 @@ strategy("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_b
 // change it in Settings > Properties > Commission. Made for spot XAUUSD (1 contract = 1 oz).
 //
 // Signals are decided on CLOSED candles only, so a printed signal does not disappear.
+// calc_on_every_tick=true only keeps the panel and zones live on the forming candle; all trading
+// decisions and orders still happen at the candle close (barstate.isconfirmed).
 // Shared rules with MT5: mt5/AurumCore.mqh. Demo research — not a guaranteed strategy.
 // =====================================================================
 

@@ -132,7 +132,9 @@ class AllInOneContract(unittest.TestCase):
 
     def test_is_a_strategy(self):
         self.assertTrue(PINE.startswith("//@version=6\nstrategy("))
-        for setting in ("process_orders_on_close=true", "pyramiding=0", "commission_value=0.15", "initial_capital=1000"):
+        # calc_on_every_tick: without it a strategy skips the forming candle, so the panel
+        # (drawn on barstate.islast) is missing while the market is open
+        for setting in ("process_orders_on_close=true", "calc_on_every_tick=true", "pyramiding=0", "commission_value=0.15", "initial_capital=1000"):
             self.assertIn(setting, PINE)
         self.assertNotIn("alertcondition(", PINE)   # not allowed in strategies
         self.assertFalse((ROOT / "tradingview" / "AurumStrategy.pine").exists())
