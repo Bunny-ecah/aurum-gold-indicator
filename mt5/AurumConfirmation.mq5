@@ -1,5 +1,5 @@
 #property copyright "Aurum Gold - demo research"
-#property version   "4.00"
+#property version   "4.10"
 #property description "XAUUSD supply/demand + support/resistance signals with entry, stop, target, lot size and a built-in track record. No order execution."
 #property indicator_chart_window
 #property indicator_buffers 2
@@ -16,6 +16,7 @@
 
 // BUY  = trend UP + price dips into DEMAND (2 pts) and/or SUPPORT (1 pt) + the candle closes back above it
 //        + the target (next resistance/supply) is at least MinReward x risk away. SELL = the mirror image.
+// New trades only when the signal candle opens in the chosen session (London / New York by default).
 // One trade at a time; it closes at TP, SL or after MaxTradeBars candles. Closed trades form the RECORD
 // (a built-in backtest of these rules). Same rules as TradingView v6.
 
@@ -24,6 +25,14 @@ enum AurumSignalMode
    SIGNALS_BALANCED=0,   // Balanced: supply/demand zone (recommended)
    SIGNALS_STRICT=1,     // Strict: zone + S/R together (fewest)
    SIGNALS_AGGRESSIVE=2  // Aggressive: any zone or S/R level (most)
+};
+
+enum AurumSessions
+{
+   SESSIONS_LONDON_NY=0, // London + New York
+   SESSIONS_LONDON=1,    // London only
+   SESSIONS_NEWYORK=2,   // New York only
+   SESSIONS_ALL=3        // All day (no filter)
 };
 
 enum AurumSwingSize
@@ -35,6 +44,7 @@ enum AurumSwingSize
 
 input group "1. Signals"
 input AurumSignalMode SignalMode=SIGNALS_BALANCED;      // Signal mode
+input AurumSessions   Sessions=SESSIONS_LONDON_NY;      // Trading sessions (new trades only)
 input AurumSwingSize  SwingSize=SWING_NORMAL;           // Swing size for S/R levels
 input ENUM_TIMEFRAMES TrendTimeframe=PERIOD_CURRENT;    // Trend timeframe (current = auto)
 input group "2. Risk"
@@ -56,6 +66,8 @@ input int    MaxItems=4;                                // Max zones / levels ke
 input int    ATRPeriod=14;                              // ATR period
 input int    MaxTradeBars=100;                          // Close a trade after (candles)
 input int    HistoryBars=3000;                          // Candles to scan (also the record length)
+input int    ServerUTCOffset=99;                        // Broker server time in winter, UTC+hours (99 = auto)
+input bool   ServerFollowsUSDST=true;                   // Manual offset only: server clock moves with US summer time
 input int    PanelX=12;                                 // Panel X
 input int    PanelY=24;                                 // Panel Y
 input int    PanelFontSize=10;                          // Panel font size
@@ -93,6 +105,9 @@ double lastR=0;
 string lastHow="",skipText="";
 double lastClose=0,lastATR=0;
 int trendNow=0;
+// Sessions
+long winterOffset=0;
+bool followsUS=false,sessionFilterOn=true,londonNow=false,newYorkNow=false,sessionOKNow=true;
 
 ENUM_TIMEFRAMES AutoTrendTF()
 {
@@ -103,6 +118,11 @@ ENUM_TIMEFRAMES AutoTrendTF()
    if(s<=14400) return PERIOD_D1;
    if(s<=86400) return PERIOD_W1;
    return PERIOD_MN1;
+}
+
+string SessionName()
+{
+   return Sessions==SESSIONS_LONDON?"London only":Sessions==SESSIONS_NEWYORK?"New York only":Sessions==SESSIONS_ALL?"All day":"London + New York";
 }
 
 string Price(const double p) { return p>0?DoubleToString(p,_Digits):"--"; }
@@ -339,12 +359,19 @@ void RenderPanel()
    if(prefix=="") return;
    int lineH=PanelFontSize+8;
    int width=(int)MathMin(640,MathMax(360,(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)-PanelX-16));
-   string rows[10]; color cols[10];
-   for(int i=0;i<10;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
+   string rows[11]; color cols[11];
+   for(int i=0;i<11;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
 
    rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF); cols[0]=clrGold;
    rows[1]="TREND        "+(trendNow>0?"UP   only BUY":trendNow<0?"DOWN   only SELL":"FLAT   no trades");
    cols[1]=trendNow>0?clrMediumSeaGreen:trendNow<0?clrTomato:clrSilver;
+   string nowName=londonNow && newYorkNow?"London + New York":londonNow?"London":newYorkNow?"New York":"Asia / off-hours";
+   long shown=winterOffset+((followsUS && AurumUSSummer((long)TimeGMT()))?3600:0);
+   string zone="server UTC"+(shown>=0?"+":"")+IntegerToString(shown/3600);
+   if(tester && ServerUTCOffset==99) zone="TESTER: set ServerUTCOffset";
+   rows[2]="SESSION      "+nowName+(!sessionFilterOn?"   (filter off)":sessionOKNow?"   trading":"   no new trades")+"   ["+zone+"]";
+   cols[2]=!sessionFilterOn?clrWhiteSmoke:sessionOKNow?clrMediumSeaGreen:clrOrange;
+   if(tester && ServerUTCOffset==99 && sessionFilterOn) cols[2]=clrOrange;
    string status=inTrade?(tAge==0?(tDir>0?"BUY NOW":"SELL NOW"):(tDir>0?"IN BUY TRADE":"IN SELL TRADE")):"WAIT";
    color statusBg=inTrade?(tDir>0?C'0,110,90':C'150,30,35'):C'70,75,85';
    if(inTrade)
@@ -352,26 +379,27 @@ void RenderPanel()
       double risk=MathAbs(tEntry-tSL);
       double lot=LotSize(tEntry,tSL);
       double minLot=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
-      rows[3]="ENTRY        "+Price(tEntry)+(tAge>0?"   ("+IntegerToString(tAge)+" candles ago)":""); cols[3]=clrDodgerBlue;
-      rows[4]="STOP LOSS    "+Price(tSL); cols[4]=clrTomato;
-      rows[5]="TAKE PROFIT  "+Price(tTP)+"   RR 1 : "+DoubleToString(AurumRR(tEntry,tSL,tTP),1); cols[5]=clrLimeGreen;
-      if(lot>0) rows[6]="LOT SIZE     "+DoubleToString(lot,2)+" lot = risk "+DoubleToString(RiskMoney(),2)+" "+AccountInfoString(ACCOUNT_CURRENCY)+" ("+DoubleToString(RiskPercent,1)+"%)";
-      else { rows[6]="LOT SIZE     min "+DoubleToString(minLot,2)+" lot risks "+DoubleToString(minLot*risk*MoneyPerPricePerLot(),2)+" - above "+DoubleToString(RiskPercent,1)+"%"; cols[6]=clrOrange; }
+      rows[4]="ENTRY        "+Price(tEntry)+(tAge>0?"   ("+IntegerToString(tAge)+" candles ago)":""); cols[4]=clrDodgerBlue;
+      rows[5]="STOP LOSS    "+Price(tSL); cols[5]=clrTomato;
+      rows[6]="TAKE PROFIT  "+Price(tTP)+"   RR 1 : "+DoubleToString(AurumRR(tEntry,tSL,tTP),1); cols[6]=clrLimeGreen;
+      if(lot>0) rows[7]="LOT SIZE     "+DoubleToString(lot,2)+" lot = risk "+DoubleToString(RiskMoney(),2)+" "+AccountInfoString(ACCOUNT_CURRENCY)+" ("+DoubleToString(RiskPercent,1)+"%)";
+      else { rows[7]="LOT SIZE     min "+DoubleToString(minLot,2)+" lot risks "+DoubleToString(minLot*risk*MoneyPerPricePerLot(),2)+" - above "+DoubleToString(RiskPercent,1)+"%"; cols[7]=clrOrange; }
    }
    else
    {
       int k; double top=0,bot=0; datetime start=0; string next;
-      if(trendNow>0) { AreaBelow(k,top,bot,start); next=k==0?"No buy area below - wait":"Wait for a dip into "+AreaText(k,top,bot,false)+", then a bullish candle"; }
+      if(!sessionOKNow) next="Outside "+SessionName()+" - no new trades until the session opens";
+      else if(trendNow>0) { AreaBelow(k,top,bot,start); next=k==0?"No buy area below - wait":"Wait for a dip into "+AreaText(k,top,bot,false)+", then a bullish candle"; }
       else if(trendNow<0) { AreaAbove(k,top,bot,start); next=k==0?"No sell area above - wait":"Wait for a rally into "+AreaText(k,top,bot,true)+", then a bearish candle"; }
       else next="Trend is flat - no trades until it turns";
-      rows[3]="NEXT         "+next;
-      if(skipAge>=0 && skipAge<=10) { rows[4]="NOTE         "+skipText; cols[4]=clrOrange; }
+      rows[4]="NEXT         "+next;
+      if(skipAge>=0 && skipAge<=10) { rows[5]="NOTE         "+skipText; cols[5]=clrOrange; }
       if(ArraySize(results)>0)
       {
-         rows[5]="LAST TRADE   "+(lastDir>0?"BUY -> ":"SELL -> ")+lastHow+" "+RText(lastR)+"   ("+IntegerToString(lastAge)+" candles ago)";
-         cols[5]=lastR>0?clrMediumSeaGreen:lastR<0?clrTomato:clrSilver;
+         rows[6]="LAST TRADE   "+(lastDir>0?"BUY -> ":"SELL -> ")+lastHow+" "+RText(lastR)+"   ("+IntegerToString(lastAge)+" candles ago)";
+         cols[6]=lastR>0?clrMediumSeaGreen:lastR<0?clrTomato:clrSilver;
       }
-      else rows[5]="LAST TRADE   No closed trades yet";
+      else rows[6]="LAST TRADE   No closed trades yet";
    }
    int n=ArraySize(results);
    if(n>0)
@@ -384,26 +412,26 @@ void RenderPanel()
          if(i>=first20) { if(results[i]>0) wins20++; total20+=results[i]; }
       }
       int n20=n-first20;
-      rows[7]="RECORD       "+IntegerToString(n)+" trades  "+DoubleToString(100.0*wins/n,0)+"% win  avg "+RText(total/n)+"  total "+RText(total);
-      cols[7]=total>=0?clrMediumSeaGreen:clrTomato;
-      rows[8]="LAST "+IntegerToString(n20)+"      "+DoubleToString(100.0*wins20/n20,0)+"% win  total "+RText(total20);
-      cols[8]=total20>=0?clrMediumSeaGreen:clrTomato;
+      rows[8]="RECORD       "+IntegerToString(n)+" trades  "+DoubleToString(100.0*wins/n,0)+"% win  avg "+RText(total/n)+"  total "+RText(total);
+      cols[8]=total>=0?clrMediumSeaGreen:clrTomato;
+      rows[9]="LAST "+IntegerToString(n20)+"      "+DoubleToString(100.0*wins20/n20,0)+"% win  total "+RText(total20);
+      cols[9]=total20>=0?clrMediumSeaGreen:clrTomato;
    }
-   else rows[7]="RECORD       No closed trades in the scanned history yet";
+   else rows[8]="RECORD       No closed trades in the scanned history yet";
    string live; LiveGate(live);
-   rows[9]="ALERTS       "+delivery+"  |  "+live; cols[9]=clrSilver;
+   rows[10]="ALERTS       "+delivery+"  |  "+live; cols[10]=clrSilver;
 
-   PanelRect(prefix+"pbg",PanelX,PanelY,width,12*lineH,C'25,30,38');
+   PanelRect(prefix+"pbg",PanelX,PanelY,width,13*lineH,C'25,30,38');
    int statusH=PanelFontSize*2+12;
    int y=PanelY+8;
-   for(int i=0;i<10;i++)
+   for(int i=0;i<11;i++)
    {
-      if(i==2)
+      if(i==3)
       {
          // Big status line
-         PanelLabel(prefix+"pl2a",PanelX+10,y+(statusH-lineH)/2,"STATUS",clrSilver,PanelFontSize);
+         PanelLabel(prefix+"pl3a",PanelX+10,y+(statusH-lineH)/2,"STATUS",clrSilver,PanelFontSize);
          PanelRect(prefix+"pst",PanelX+110,y,width-122,statusH,statusBg);
-         PanelLabel(prefix+"pl2",PanelX+122,y+4,status,clrWhite,PanelFontSize+8);
+         PanelLabel(prefix+"pl3",PanelX+122,y+4,status,clrWhite,PanelFontSize+8);
          y+=statusH+4;
          continue;
       }
@@ -461,6 +489,7 @@ int OnInit()
       ImpulseATR<0.5 || ImpulseATR>5 || SLBufferATR<0 || SLBufferATR>2 || MinRiskATR<0.1 || MinRiskATR>5 ||
       MaxItems<1 || MaxItems>10 || ATRPeriod<2 || ATRPeriod>200 || MaxTradeBars<5 || MaxTradeBars>500 ||
       HistoryBars<200 || HistoryBars>20000 || MaxSpreadPrice<=0 ||
+      (ServerUTCOffset!=99 && (ServerUTCOffset<-12 || ServerUTCOffset>14)) ||
       PanelX<0 || PanelY<0 || PanelFontSize<8 || PanelFontSize>18)
    { Print("Aurum: an input is out of range. Reset inputs to defaults."); return INIT_PARAMETERS_INCORRECT; }
    SetIndexBuffer(0,Buy,INDICATOR_DATA); SetIndexBuffer(1,Sell,INDICATOR_DATA);
@@ -529,6 +558,18 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       MqlRates request[]; CopyRates(_Symbol,trendTF,0,300,request);
    }
 
+   // Broker server clock -> UTC, for the London / New York session filter
+   sessionFilterOn=Sessions!=SESSIONS_ALL && PeriodSeconds(_Period)<14400;
+   if(ServerUTCOffset==99)
+   {
+      long measured=(long)MathRound((double)(TimeTradeServer()-TimeGMT())/3600.0)*3600;
+      AurumAutoServerZone(measured,(long)TimeGMT(),winterOffset,followsUS);
+   }
+   else { winterOffset=(long)ServerUTCOffset*3600; followsUS=ServerFollowsUSDST; }
+   long nowUTC=(long)time[0]-AurumServerOffset(winterOffset,followsUS,(long)time[0]);
+   londonNow=AurumLondonOpen(nowUTC); newYorkNow=AurumNewYorkOpen(nowUTC);
+   sessionOKNow=!sessionFilterOn || AurumSessionAllowed((int)Sessions,nowUTC);
+
    ArrayInitialize(Buy,EMPTY_VALUE); ArrayInitialize(Sell,EMPTY_VALUE);
    ResetState();
    ObjectsDeleteAll(0,prefix+"s");
@@ -595,6 +636,8 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       int buyScore=AurumScore(inDemand,atSupport);
       int sellScore=AurumScore(inSupply,atResistance);
 
+      long barUTC=(long)time[i]-AurumServerOffset(winterOffset,followsUS,(long)time[i]);
+      bool sessionOK=!sessionFilterOn || AurumSessionAllowed((int)Sessions,barUTC);
       int dir=inTrade?0:AurumDecide((int)SignalMode,trendDir,AurumBullRejection(c),buyScore,AurumBearRejection(c),sellScore);
       if(dir!=0)
       {
@@ -621,7 +664,13 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             why=(inSupply?"Supply ":"")+(atResistance?"Resistance":"");
          }
          StringTrimRight(why);
-         if(!AurumTarget(dir,entry,stop,nearest,MinReward,tp))
+         bool targetOK=AurumTarget(dir,entry,stop,nearest,MinReward,tp);
+         if(!sessionOK)
+         {
+            skipK=k;
+            skipText=(dir>0?"BUY":"SELL")+" setup skipped: outside "+SessionName();
+         }
+         else if(!targetOK)
          {
             skipK=k;
             skipText=(dir>0?"BUY":"SELL")+" skipped: target only "+DoubleToString(AurumRR(entry,stop,nearest),1)+"R away";

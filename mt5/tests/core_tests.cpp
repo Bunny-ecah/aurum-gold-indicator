@@ -143,6 +143,45 @@ AURUM_EXPORT int RunTests()
    Check(AurumLots(1,2650,2645,100,0.01,0.01)==0,"below minimum lot = 0");
    Check(AurumLots(10,2650,2650,100,0.01,0.01)==0,"zero stop distance = 0");
 
+   // --- Trading sessions (vectors from the IANA time-zone database)
+   Check(AurumLondonOpen(1768377540)==0 && AurumNewYorkOpen(1768377540)==0,"Wed 07:59 London winter: closed");
+   Check(AurumLondonOpen(1768377600)==1 && AurumNewYorkOpen(1768377600)==0,"Wed 08:00 London winter: open");
+   Check(AurumLondonOpen(1768395600)==1 && AurumNewYorkOpen(1768395600)==1,"Wed 13:00 UTC winter: London + New York");
+   Check(AurumLondonOpen(1768409940)==1 && AurumNewYorkOpen(1768409940)==1,"Wed 16:59 UTC winter: both");
+   Check(AurumLondonOpen(1768410000)==0 && AurumNewYorkOpen(1768410000)==1,"Wed 17:00 UTC winter: London closed");
+   Check(AurumLondonOpen(1768427940)==0 && AurumNewYorkOpen(1768427940)==1,"Wed 21:59 UTC winter: NY 16:59");
+   Check(AurumLondonOpen(1768428000)==0 && AurumNewYorkOpen(1768428000)==0,"Wed 22:00 UTC winter: NY closed");
+   Check(AurumLondonOpen(1784098800)==1 && AurumNewYorkOpen(1784098800)==0,"Jul 07:00 UTC = London 08:00 BST");
+   Check(AurumLondonOpen(1784116800)==1 && AurumNewYorkOpen(1784116800)==1,"Jul 12:00 UTC = NY 08:00 EDT");
+   Check(AurumLondonOpen(1784149200)==0 && AurumNewYorkOpen(1784149200)==0,"Jul 21:00 UTC = NY 17:00 EDT closed");
+   Check(AurumLondonOpen(1773144000)==1 && AurumNewYorkOpen(1773144000)==1,"US summer started, UK not yet (Mar 10)");
+   Check(AurumLondonOpen(1773126000)==0 && AurumNewYorkOpen(1773126000)==0,"UK still winter on Mar 10");
+   Check(AurumLondonOpen(1774854000)==1 && AurumNewYorkOpen(1774854000)==0,"UK summer from Mar 29");
+   Check(AurumLondonOpen(1793361600)==1 && AurumNewYorkOpen(1793361600)==1,"UK winter, US still summer (Oct 30)");
+   Check(AurumLondonOpen(1794900600)==0 && AurumNewYorkOpen(1794900600)==0,"Today 15:30 Malaysia: before London");
+   Check(AurumLondonOpen(1794904200)==1 && AurumNewYorkOpen(1794904200)==0,"Today 16:30 Malaysia: London");
+   Check(AurumLondonOpen(1768651200)==0 && AurumNewYorkOpen(1768651200)==0,"Saturday: closed");
+   Check(AurumLondonOpen(1768744800)==0 && AurumNewYorkOpen(1768744800)==0,"Sunday: closed");
+   Check(AurumLondonOpen(1709197200)==1 && AurumNewYorkOpen(1709197200)==0,"leap day");
+   Check(AurumSessionAllowed(AURUM_SESSIONS_LONDON_NY,1768374000)==false,"filter blocks Asia");
+   Check(AurumSessionAllowed(AURUM_SESSIONS_ALL,1768374000)==true,"All day allows Asia");
+   Check(AurumSessionAllowed(AURUM_SESSIONS_LONDON,1768413600)==false,"London only blocks NY afternoon");
+   Check(AurumSessionAllowed(AURUM_SESSIONS_NEWYORK,1768413600)==true,"New York only");
+   Check(AurumDaysFromCivil(1970,1,1)==0 && AurumDaysFromCivil(2000,3,1)==11017,"calendar days");
+   Check(AurumYearOfDays(AurumDaysFromCivil(2028,12,31))==2028 && AurumYearOfDays(AurumDaysFromCivil(2029,1,1))==2029,"year of day");
+   Check(AurumWeekday(AurumDaysFromCivil(2026,11,17))==2,"17 Nov 2026 is a Tuesday");
+   // Broker clock: UTC+2 winter / UTC+3 summer (follows US daylight time)
+   Check(AurumServerOffset(7200,true,1768399200)==7200,"broker winter UTC+2");
+   Check(AurumServerOffset(7200,true,1784041200)==10800,"broker summer UTC+3");
+   Check(AurumServerOffset(0,false,1784030400)==0,"UTC broker never shifts");
+   long wo=0; bool fu=false;
+   AurumAutoServerZone(10800,1784030400,wo,fu);
+   Check(wo==7200 && fu,"auto: UTC+3 in US summer = UTC+2 winter broker");
+   AurumAutoServerZone(7200,1768392000,wo,fu);
+   Check(wo==7200 && fu,"auto: UTC+2 in winter");
+   AurumAutoServerZone(0,1784030400,wo,fu);
+   Check(wo==0 && !fu,"auto: UTC server");
+
    // --- Higher timeframe
    Check(AurumTrendDir(2650,2600)==1 && AurumTrendDir(2550,2600)==-1 && AurumTrendDir(2600,2600)==0,"trend direction");
    Check(AurumTrendDir(0,2600)==0,"missing HTF data = no trend");

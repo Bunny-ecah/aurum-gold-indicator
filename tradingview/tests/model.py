@@ -100,8 +100,9 @@ class Signal:
     result: float = None
 
 
-def run(bars, trend, s=Settings()):
-    """bars: list of (open, high, low, close); trend: list of 1/-1/0 per bar."""
+def run(bars, trend, s=Settings(), allowed=None):
+    """bars: list of (open, high, low, close); trend: list of 1/-1/0 per bar;
+    allowed: optional list of bools, False = candle outside the trading session (no new trades)."""
     atr = atr_series(bars)
     res, sup, demand, supply, signals = [], [], [], [], []
     trade = None
@@ -126,8 +127,9 @@ def run(bars, trend, s=Settings()):
         need = POINTS_NEEDED[s.mode]
         buy_raw = bull_rejection(o, h, l, c) and buy_score >= need and trend[i] > 0
         sell_raw = bear_rejection(o, h, l, c) and sell_score >= need and trend[i] < 0
-        buy = buy_raw and not sell_raw and trade is None     # one trade at a time
-        sell = sell_raw and not buy_raw and trade is None
+        in_session = allowed is None or allowed[i]
+        buy = buy_raw and not sell_raw and trade is None and in_session     # one trade at a time
+        sell = sell_raw and not buy_raw and trade is None and in_session
         if buy or sell:
             entry = c
             if buy:

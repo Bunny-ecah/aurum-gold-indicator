@@ -15,6 +15,7 @@ Recommended start: **XAUUSD 15m chart** (trend from 4H) or **5m** (trend from 1H
 | Row | What it tells you |
 | --- | --- |
 | **TREND** | UP = only BUY trades. DOWN = only SELL trades. FLAT = no trades. |
+| **SESSION** | Which market is open now. ✓ trading = new signals allowed. ✗ = outside your chosen session, so no new signals. |
 | **STATUS** | **BUY NOW / SELL NOW** = a signal just closed: the trade plan is below. **IN BUY / SELL TRADE** = a signal is still running. **WAIT** = do nothing yet. |
 | ENTRY / STOP LOSS / TAKE PROFIT | The plan for the open signal, with its reward-to-risk (RR 1 : 2 means you win 2 for every 1 you risk). |
 | LOT SIZE | Lot size so that hitting the stop loss costs your risk % of the balance. |
@@ -33,18 +34,32 @@ Recommended start: **XAUUSD 15m chart** (trend from 4H) or **5m** (trend from 1H
 
 ## The rules
 
-A **BUY** needs all four:
+A **BUY** needs all five:
 
 1. **Trend UP:** the last *completed* higher-timeframe candle closed above its EMA 200.
 2. **Price in a buy area:** a Demand zone (2 points) and/or Support level (1 point). Points needed: Aggressive 1, **Balanced 2** (a zone), Strict 3 (zone + support).
 3. **Rejection candle:** it closes back above the area: a bullish candle or a long lower wick.
 4. **Room to the target:** the next Resistance/Supply above is at least **1.5 × risk** away. If it is closer, the setup is skipped and the panel shows a NOTE.
+5. **Inside the trading session:** the signal candle opened during the chosen session (London + New York by default). Outside it, the setup is skipped and shown as a NOTE. A trade that is already open is always followed to its end.
 
 A **SELL** is the mirror image.
 
 **Stop loss:** just beyond the area that was touched (+0.2 ATR), at least 0.5 ATR from entry.
 **Take profit:** the next opposite area, capped at 3R. No area ahead → 2R.
 **One trade at a time.** A new signal can only appear after the current one ends.
+
+## Trading sessions
+
+Gold moves cleanly when London and New York are open. The Asian session is often slow and choppy, which suits zone trading badly.
+
+| Session | Local time | Malaysia time (winter / summer) |
+| --- | --- | --- |
+| London | 08:00–17:00 London | 16:00–01:00 / 15:00–00:00 |
+| New York | 08:00–17:00 New York | 21:00–06:00 / 20:00–05:00 |
+
+Daylight saving is handled automatically. Choose **London + New York** (default), **London only**, **New York only** or **All day**. The filter is ignored on 4H and higher charts.
+
+**Does it help?** Test it: read the RECORD with *London + New York*, then with *All day*. Keep the one with the better average R over more trades.
 
 ## The RECORD (built-in backtest)
 
@@ -68,13 +83,32 @@ How to judge it:
 
 What the record does **not** include: spread, commission, slippage, and news spikes. Gold spreads are often 0.20–0.50, so a real result is a bit worse, especially with small stops on 1m/5m. Entry is the signal candle's close; your real fill will differ slightly.
 
-## Backtesting later
+## Full backtest: the Strategy version (TradingView)
 
-1. **Quick check (today):** read RECORD on several timeframes. TradingView loads only a limited number of candles (more on paid plans), so the sample is the loaded history.
-2. **Bar Replay (TradingView):** go back a few months, press play, and trade the signals by hand as if live. This tests whether *you* can follow them.
-3. **MT5 visual tester:** *View → Strategy Tester*, choose the indicator, enable *Visualization*, run on XAUUSD 15m over a few months. The panel RECORD covers the last `HistoryBars` candles (default 3000).
-4. **Export:** the TradingView *Data Window* shows `Trade result (R)` on each exit candle, which you can export to a spreadsheet.
-5. **Next step if the record looks good:** turn the same rules into a TradingView *strategy* or an MT5 Expert Advisor for a full report (drawdown, profit factor, costs).
+`tradingview/AurumStrategy.pine` uses **exactly the same rule code** as the indicator (a test checks this) and runs it in TradingView's Strategy Tester, which reports net profit, max drawdown, profit factor, win rate and every trade.
+
+1. Pine Editor → new script → paste all of `AurumStrategy.pine` → **Save** → **Add to chart**. (Use OANDA:XAUUSD or another spot XAUUSD where 1 contract = 1 oz.)
+2. Open the **Strategy Tester** tab under the chart.
+3. Settings → **Properties**: *Initial capital* (default 1000), *Commission* 0.15 per contract (= about 0.30 spread per trade; change it to your broker's spread ÷ 2).
+4. Settings → **Inputs**: same as the indicator (mode, sessions, minimum reward), plus *Risk per trade (% of equity)*.
+5. Read **Net profit**, **Max drawdown**, **Profit factor** (above 1.3 is good, below 1.0 loses), **Total closed trades** (need 50+).
+
+Suggested test plan, writing the results in a table:
+
+| Chart | Mode | Sessions | Trades | Win % | Profit factor | Max drawdown |
+| --- | --- | --- | --- | --- | --- | --- |
+| 15m | Balanced | London + New York | | | | |
+| 15m | Balanced | All day | | | | |
+| 5m | Balanced | London + New York | | | | |
+| 1H | Balanced | London + New York | | | | |
+| 15m | Strict | London + New York | | | | |
+
+Small differences from the indicator's RECORD are normal: the Strategy Tester includes the commission, and when one candle touches both stop and target it guesses the order of prices inside the candle, while the RECORD always counts that as a loss.
+
+Other ways to test:
+
+- **Bar Replay (TradingView):** go back a few months, press play, and trade the signals by hand as if live. This tests whether *you* can follow them.
+- **MT5 visual tester:** *View → Strategy Tester* → Indicator → AurumConfirmation, XAUUSD, a few months, *Visualization* on. **Set `ServerUTCOffset`** to your broker's winter offset (for example 2), because the tester cannot detect it. The panel RECORD covers the last `HistoryBars` candles (default 3000).
 
 ## Alerts
 
@@ -91,9 +125,10 @@ Recreate alerts after changing the script or settings.
 | 1. Signals | Signal mode | Balanced |
 | | Swing size | Normal |
 | | Trend timeframe | auto |
+| | Trading sessions | London + New York |
+| | Minimum reward (× risk) | 1.5 |
 | 2. Risk | Account balance ($) *(TradingView only; MT5 reads it from the account)* | 1000 |
 | | Risk per trade (%) | 1 |
-| | Minimum reward (× risk) | 1.5 |
 | 3. Display | Show all nearby zones and levels | off |
 | | Show past signals and results | on |
 | 4. Advanced | Zone impulse, stop buffer, minimum stop, items kept, ATR period, trade time limit, contract size (100 oz) | keep defaults |

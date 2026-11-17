@@ -6,17 +6,20 @@
 
 | Platform | Current source | Status |
 | --- | --- | --- |
-| MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v4; core tests pass; MetaEditor compile and demo testing outstanding |
-| TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v6; model/contract tests pass; Pine Editor compile and demo testing outstanding |
+| MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v4.10; core tests pass; MetaEditor compile and demo testing outstanding |
+| TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v6 indicator; model/contract tests pass; Pine Editor compile and demo testing outstanding |
+| TradingView backtest | [`tradingview/AurumStrategy.pine`](tradingview/AurumStrategy.pine) | Strategy Tester version with identical rules, risk-% sizing and spread cost |
 
 Earlier TradingView sources are retained for comparison: basic indicator, multi-timeframe v2 and entry-planner v3. Install only the version you intend to use, rather than all of them on one chart.
 
 ## Features (TradingView v6 and MT5 v4 share the same rules)
 
 - **One clear STATUS:** BUY NOW / SELL NOW / IN TRADE / WAIT, and what to wait for next.
+- **Session filter:** new trades only in London and/or New York hours (daylight saving handled).
 - **SNR + SND:** support/resistance from swing points and supply/demand zones from strong impulse candles. Only the nearest area above and below price is drawn.
 - **Trade plan:** entry, stop loss, take profit, reward-to-risk and **lot size** for your balance and risk %. Setups with too little room to the target are skipped.
 - **RECORD:** every signal is followed to its result, giving win %, average R and total R on the loaded history: a built-in backtest of the rules.
+- **Strategy version** for TradingView's Strategy Tester: net profit, drawdown, profit factor, with costs.
 - Any timeframe, few settings, closed-candle signals that do not repaint.
 
 How to use it, read the panel and backtest: [`tradingview/GUIDE.md`](tradingview/GUIDE.md).
@@ -50,7 +53,7 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_tradingview.py
 ```
 
-This runs 24 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+This runs 29 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 
@@ -58,7 +61,7 @@ For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual St
 mt5\tests\run-tests.cmd
 ```
 
-On Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN mt5/tests/core_tests.cpp -o core_tests && ./core_tests`. The harness compiles the shared `AurumCore.mqh` as C++; the recorded run passed 82 checks. This does not test MT5 event integration or a strategy's performance.
+On Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN mt5/tests/core_tests.cpp -o core_tests && ./core_tests`. The harness compiles the shared `AurumCore.mqh` as C++; the recorded run passed 114 checks. This does not test MT5 event integration or a strategy's performance.
 
 ## Remaining work
 

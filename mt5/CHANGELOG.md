@@ -1,3 +1,10 @@
+# v4.10
+
+- Trading-session filter: new trades only when the signal candle opens in London (08:00-17:00 London) and/or New York (08:00-17:00 New York), Monday to Friday. Daylight saving handled; checked against the IANA time-zone database. Ignored on H4 and higher.
+- Broker server clock detected automatically (UTC+2/+3 brokers follow US summer time); manual `ServerUTCOffset` for the Strategy Tester.
+- SESSION row on the panel; skipped setups outside the session shown as a NOTE.
+- 114 core checks.
+
 # v4.00
 
 - Big STATUS on the panel: BUY NOW / SELL NOW / IN TRADE / WAIT, with what to wait for next.

@@ -209,6 +209,101 @@ double AurumLots(const double riskMoney,const double entry,const double stop,
    return lots>=minLot?lots:0;
 }
 
+// ---------- Trading sessions (all times in UTC seconds since 1970) ----------
+#define AURUM_SESSIONS_LONDON_NY 0   // London or New York open
+#define AURUM_SESSIONS_LONDON    1
+#define AURUM_SESSIONS_NEWYORK   2
+#define AURUM_SESSIONS_ALL       3   // no filter
+
+long AurumFloorDiv(const long a,const long b) { return a>=0?a/b:-((-a+b-1)/b); }
+
+// Days since 1970-01-01 for a calendar date (proleptic Gregorian).
+long AurumDaysFromCivil(int y,const int m,const int d)
+{
+   y-=m<=2?1:0;
+   long era=AurumFloorDiv(y,400);
+   long yoe=y-era*400;
+   long doy=(153*(m+(m>2?-3:9))+2)/5+d-1;
+   long doe=yoe*365+yoe/4-yoe/100+doy;
+   return era*146097+doe-719468;
+}
+
+int AurumYearOfDays(const long days)
+{
+   long z=days+719468;
+   long era=AurumFloorDiv(z,146097);
+   long doe=z-era*146097;
+   long yoe=(doe-doe/1460+doe/36524-doe/146096)/365;
+   long doy=doe-(365*yoe+yoe/4-yoe/100);
+   long mp=(5*doy+2)/153;
+   long m=mp<10?mp+3:mp-9;
+   return (int)(yoe+era*400+(m<=2?1:0));
+}
+
+int AurumWeekday(const long days) { return (int)(((days+4)%7+7)%7); }   // 0 Sunday .. 6 Saturday
+
+long AurumLastSunday(const int y,const int m)
+{
+   long last=(m==12?AurumDaysFromCivil(y+1,1,1):AurumDaysFromCivil(y,m+1,1))-1;
+   return last-AurumWeekday(last);
+}
+
+long AurumNthSunday(const int y,const int m,const int n)
+{
+   long first=AurumDaysFromCivil(y,m,1);
+   return first+(7-AurumWeekday(first))%7+7*(n-1);
+}
+
+// UK summer time: last Sunday of March 01:00 UTC -> last Sunday of October 01:00 UTC.
+bool AurumUKSummer(const long utc)
+{
+   int y=AurumYearOfDays(AurumFloorDiv(utc,86400));
+   return utc>=AurumLastSunday(y,3)*86400+3600 && utc<AurumLastSunday(y,10)*86400+3600;
+}
+
+// US daylight time: second Sunday of March 02:00 EST -> first Sunday of November 02:00 EDT.
+bool AurumUSSummer(const long utc)
+{
+   int y=AurumYearOfDays(AurumFloorDiv(utc,86400));
+   return utc>=AurumNthSunday(y,3,2)*86400+7*3600 && utc<AurumNthSunday(y,11,1)*86400+6*3600;
+}
+
+// Monday-Friday, 08:00-17:00 local time.
+bool AurumLocalSessionOpen(const long local)
+{
+   long day=AurumFloorDiv(local,86400);
+   long sec=local-day*86400;
+   int wd=AurumWeekday(day);
+   return wd>=1 && wd<=5 && sec>=8*3600 && sec<17*3600;
+}
+
+bool AurumLondonOpen(const long utc) { return AurumLocalSessionOpen(utc+(AurumUKSummer(utc)?3600:0)); }
+bool AurumNewYorkOpen(const long utc) { return AurumLocalSessionOpen(utc-5*3600+(AurumUSSummer(utc)?3600:0)); }
+
+// New trades are allowed only inside the chosen session (candle OPEN time, UTC).
+bool AurumSessionAllowed(const int sessions,const long utc)
+{
+   if(sessions==AURUM_SESSIONS_ALL) return true;
+   bool london=AurumLondonOpen(utc),newYork=AurumNewYorkOpen(utc);
+   if(sessions==AURUM_SESSIONS_LONDON) return london;
+   if(sessions==AURUM_SESSIONS_NEWYORK) return newYork;
+   return london || newYork;
+}
+
+// Broker server clock -> UTC. Most UTC+2/UTC+3 brokers move their clock with US daylight time.
+// winterOffset: server minus UTC in winter (seconds).
+long AurumServerOffset(const long winterOffset,const bool followsUS,const long serverTime)
+{
+   return winterOffset+((followsUS && AurumUSSummer(serverTime-winterOffset))?3600:0);
+}
+
+// From the live measured offset (server minus UTC, seconds): guess the winter offset and DST habit.
+void AurumAutoServerZone(const long measured,const long nowUTC,long &winterOffset,bool &followsUS)
+{
+   followsUS=measured==7200 || measured==10800;
+   winterOffset=measured-((followsUS && AurumUSSummer(nowUTC))?3600:0);
+}
+
 // Select the latest COMPLETED higher-timeframe bar at the entry candle close.
 // Handles an exact boundary, a forming containing bar, and a missing-bar gap.
 int AurumClosedTrendShift(const int containing,const long containingOpen,

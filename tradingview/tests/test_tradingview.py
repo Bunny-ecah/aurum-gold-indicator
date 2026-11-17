@@ -14,6 +14,13 @@ from model import POINTS_NEEDED, Settings, lots, record, run, target, trade_step
 
 ROOT = Path(__file__).resolve().parents[2]
 PINE = (ROOT / "tradingview" / "AurumSignalAudit.pine").read_text(encoding="utf-8")
+STRATEGY = (ROOT / "tradingview" / "AurumStrategy.pine").read_text(encoding="utf-8")
+
+
+def shared_block(source):
+    start = source.index("// ===================== SHARED RULES START")
+    end = source.index("// ===================== SHARED RULES END")
+    return source[start:end]
 CORE = (ROOT / "mt5" / "AurumCore.mqh").read_text(encoding="utf-8")
 MQ5 = (ROOT / "mt5" / "AurumConfirmation.mq5").read_text(encoding="utf-8")
 
@@ -109,7 +116,7 @@ class PineContract(unittest.TestCase):
                 self.assertIn(f"if array.size({name}) > 0", lines[i - 1], line)
 
     def test_inputs_are_few(self):
-        self.assertLessEqual(PINE.count("= input."), 16)
+        self.assertLessEqual(PINE.count("= input."), 17)
 
     def test_trade_rules_match_core(self):
         # Target: cap max(3, minRR), fallback max(2, minRR); stop loss checked before target
@@ -119,11 +126,39 @@ class PineContract(unittest.TestCase):
         self.assertIn("AurumMax(2.0,minRR)", CORE)
         self.assertLess(PINE.index("if slHit\n        closedR := -1.0"), PINE.index("else if tpHit"))
         self.assertLess(CORE.index("if(stopHit)"), CORE.index("if(targetHit)"))
-        self.assertIn("and not inTrade", PINE)
+        self.assertIn("bool canOpen = not inTrade", PINE)
+        self.assertIn("and canOpen    // one trade at a time", PINE)
 
     def test_panel_has_status_and_record(self):
         for text in ('"BUY NOW"', '"SELL NOW"', '"WAIT"', '"RECORD"', '"LOT SIZE"', '"TAKE PROFIT"'):
             self.assertIn(text, PINE)
+
+
+class StrategyContract(unittest.TestCase):
+    def test_strategy_uses_identical_rules(self):
+        self.assertEqual(shared_block(PINE), shared_block(STRATEGY))
+
+    def test_rule_inputs_identical(self):
+        block = shared_block(PINE)
+        for line in PINE.splitlines():
+            if "= input." in line:
+                name = line.split()[1]
+                if re.search(rf"\b{name}\b", block):
+                    self.assertIn(line, STRATEGY.splitlines(), name)
+
+    def test_strategy_settings(self):
+        self.assertTrue(STRATEGY.startswith("//@version=6\nstrategy("))
+        self.assertIn("process_orders_on_close=true", STRATEGY)
+        self.assertIn("pyramiding=0", STRATEGY)
+        self.assertIn("commission_value=0.15", STRATEGY)
+        self.assertIn("stop=newSL, limit=newTP", STRATEGY)
+        self.assertIn("bool canOpen = strategy.position_size == 0 or timeExit", STRATEGY)
+
+    def test_sessions(self):
+        self.assertIn('time(timeframe.period, "0800-1700:23456", "Europe/London")', PINE)
+        self.assertIn('time(timeframe.period, "0800-1700:23456", "America/New_York")', PINE)
+        self.assertIn("tfSec < 14400", PINE)
+        self.assertIn("sessions==AURUM_SESSIONS_ALL", CORE)
 
 
 class ModelBehaviour(unittest.TestCase):
@@ -199,6 +234,15 @@ class ModelBehaviour(unittest.TestCase):
         n, wins, pct, avg, total = record(sig)
         self.assertEqual(n, sum(1 for s in sig if s.result is not None))
         self.assertAlmostEqual(avg * n, total)
+
+    def test_session_mask_blocks_new_trades(self):
+        bars, trend = random_bars(3)
+        everything = run(bars, trend, Settings(mode="Aggressive"))
+        allowed = [(i // 60) % 24 >= 8 for i in range(len(bars))]   # pretend 1 candle = 1 minute
+        filtered = run(bars, trend, Settings(mode="Aggressive"), allowed=allowed)
+        self.assertTrue(all(allowed[x.bar] for x in filtered))
+        self.assertLess(len(filtered), len(everything))
+        self.assertEqual(run(bars, trend, allowed=[False] * len(bars)), [])
 
     def test_min_reward_filter(self):
         counts = [len(run(*random_bars(2), Settings(mode="Aggressive", min_rr=m))) for m in (1.0, 2.0, 3.0)]
