@@ -25,6 +25,10 @@ Earlier TradingView sources are retained for comparison: basic indicator, multi-
 
 How to use it, read the panel and backtest: [`tradingview/GUIDE.md`](tradingview/GUIDE.md).
 
+## Backtest result
+
+On real XAUUSD data from 2012 to 2022, the default settings on the **1H chart** made a small profit after spread: **239 trades, 43% win, profit factor 1.19, +26.9R, worst drawdown −11.6R**, profitable in each of the three periods tested. 15m and lower lost money with every setting tried. Full results, method and a demo-account plan: [`BACKTEST-RESULTS.md`](BACKTEST-RESULTS.md). Rerun it yourself: [`backtest/`](backtest/README.md).
+
 ## Installation
 
 ### MT5
@@ -33,7 +37,7 @@ How to use it, read the panel and backtest: [`tradingview/GUIDE.md`](tradingview
 2. Copy `mt5/AurumConfirmation.mq5` and `mt5/AurumCore.mqh` into that folder.
 3. Open the `.mq5` in MetaEditor and press **F7** to generate the `.ex5`. Compiled files are deliberately excluded from Git.
 4. Refresh Navigator and attach to the broker's gold/USD demo chart. Any timeframe works (M5 or H1 recommended).
-5. Optionally load `mt5/presets/Scalping-M5.set` or `Longer-Trades-H1.set` through Inputs > Load.
+5. Use the **H1** chart. Optionally load `mt5/presets/Recommended-H1.set` through Inputs > Load.
 
 See [`mt5/README.md`](mt5/README.md) for rules, spread units, push setup and acceptance checks. Its release-package instructions refer to separately built binaries; this repository is source-only. Build scripts require a fresh local compilation/log before packaging.
 
@@ -41,7 +45,7 @@ See [`mt5/README.md`](mt5/README.md) for rules, spread units, push setup and acc
 
 1. Copy the full contents of `tradingview/AurumSignalAudit.pine`.
 2. In TradingView open **Pine Editor**, create a new indicator, replace the template, **Save**, then **Add to chart**.
-3. Remove earlier Aurum versions from that chart. Any timeframe works; 5m, 15m and 1h are good starting points.
+3. Remove earlier Aurum versions from that chart. Use the **XAUUSD 1H** chart with the default settings (they are the tested ones).
 4. Set **Account balance** and **Risk %** in the settings. For alerts choose **alert() function calls only** to get the full trade plan in the message. Open the **Strategy Tester** tab for the backtest report.
 
 See [`tradingview/GUIDE.md`](tradingview/GUIDE.md). Older files (`AurumConfirmation.pine`, `AurumMultiTimeframe.pine`, `AurumEntryPlanner.pine`) are kept only for reference.
@@ -54,7 +58,7 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_tradingview.py
 ```
 
-This runs 31 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+This runs 32 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 

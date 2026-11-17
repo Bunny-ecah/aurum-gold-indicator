@@ -45,12 +45,12 @@ def add_zone(zones, top, bot, bar, cap):
 @dataclass
 class Settings:
     mode: str = "Balanced"
-    pivot: int = 5
+    pivot: int = 10          # Swing size Large
     impulse: float = 1.5
-    sl_buffer: float = 0.2
+    sl_buffer: float = 0.5
     min_risk: float = 0.5
     cap: int = 4
-    min_rr: float = 1.5
+    min_rr: float = 1.2
     max_bars: int = 100
 
 

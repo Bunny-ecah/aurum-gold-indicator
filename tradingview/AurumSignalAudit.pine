@@ -18,6 +18,10 @@ strategy("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_b
 // Backtest cost: commission 0.15 per oz on entry and exit (about 0.30 spread per trade);
 // change it in Settings > Properties > Commission. Made for spot XAUUSD (1 contract = 1 oz).
 //
+// DEFAULTS = the settings that held up in a 10-year test on real XAUUSD data (2012-2022, 0.30 spread):
+// 1H chart, Balanced, All day, Swing Large, Minimum reward 1.2, Stop-loss buffer 0.5 -> profit factor ~1.2.
+// 15m and lower lost money with every setting tested. See BACKTEST-RESULTS.md.
+//
 // Signals are decided on CLOSED candles only, so a printed signal does not disappear.
 // calc_on_every_tick=true only keeps the panel and zones live on the forming candle; all trading
 // decisions and orders still happen at the candle close (barstate.isconfirmed).
@@ -26,10 +30,10 @@ strategy("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_b
 
 // ---------- 1. Signals ----------
 string modeInput = input.string("Balanced", "Signal mode", options=["Balanced", "Strict", "Aggressive"], display=display.none, group="1. Signals", tooltip="Aggressive: any demand/supply zone or S/R level (most signals).\nBalanced: price must be in a demand/supply zone (recommended).\nStrict: zone AND S/R level together (fewest, strongest).\nAll modes trade only with the trend.")
-string sessionInput = input.string("London + New York", "Trading sessions", options=["London + New York", "London only", "New York only", "All day"], display=display.none, group="1. Signals", tooltip="New trades only when the signal candle opens in this session. Open trades are always followed.\nLondon 08:00-17:00 London time = 15:00/16:00 to 00:00/01:00 Malaysia time.\nNew York 08:00-17:00 New York time = 20:00/21:00 to 05:00/06:00 Malaysia time.\nDaylight saving is handled automatically. Ignored on 4H and higher charts.")
-string swingInput = input.string("Normal", "Swing size", options=["Small", "Normal", "Large"], display=display.none, group="1. Signals", tooltip="How big a swing must be to make an S/R level.\nSmall = more levels (scalping). Large = only major levels.")
+string sessionInput = input.string("All day", "Trading sessions", options=["London + New York", "London only", "New York only", "All day"], display=display.none, group="1. Signals", tooltip="New trades only when the signal candle opens in this session. Open trades are always followed.\nLondon 08:00-17:00 London time = 15:00/16:00 to 00:00/01:00 Malaysia time.\nNew York 08:00-17:00 New York time = 20:00/21:00 to 05:00/06:00 Malaysia time.\nDaylight saving is handled automatically. Ignored on 4H and higher charts.")
+string swingInput = input.string("Large", "Swing size", options=["Small", "Normal", "Large"], display=display.none, group="1. Signals", tooltip="How big a swing must be to make an S/R level.\nSmall = more levels (scalping). Large = only major levels.")
 string htfInput = input.timeframe("", "Trend timeframe (empty = auto)", display=display.none, group="1. Signals", tooltip="Auto: 1m→15m, 5m→1H, 15m-1H→4H, 2H-4H→1D, 1D→1W.")
-float minRR = input.float(1.5, "Minimum reward (× risk)", minval=1.0, maxval=5, step=0.1, display=display.none, group="1. Signals", tooltip="Skip a setup when the next opposite zone/level is closer than this.\n1.5 means you must be able to win at least 1.5x what you risk.")
+float minRR = input.float(1.2, "Minimum reward (× risk)", minval=1.0, maxval=5, step=0.1, display=display.none, group="1. Signals", tooltip="Skip a setup when the next opposite zone/level is closer than this.\n1.5 means you must be able to win at least 1.5x what you risk.")
 
 // ---------- 2. Risk ----------
 float balance = input.float(1000, "Account balance ($)", minval=1, display=display.none, group="2. Risk", tooltip="Used for the LOT SIZE on the panel.\nThe backtest uses Settings > Properties > Initial capital instead.")
@@ -43,7 +47,7 @@ string panelSize = input.string("Full", "Panel", options=["Full", "Compact", "Hi
 
 // ---------- 4. Advanced (defaults are fine) ----------
 float impulseATR = input.float(1.5, "Zone impulse: candle body ≥ ATR ×", minval=0.5, maxval=5, step=0.1, display=display.none, group="4. Advanced")
-float slBufferATR = input.float(0.2, "Stop-loss buffer beyond the area (ATR ×)", minval=0, maxval=2, step=0.05, display=display.none, group="4. Advanced")
+float slBufferATR = input.float(0.5, "Stop-loss buffer beyond the area (ATR ×)", minval=0, maxval=2, step=0.05, display=display.none, group="4. Advanced")
 float minRiskATR = input.float(0.5, "Minimum stop-loss distance (ATR ×)", minval=0.1, maxval=5, step=0.05, display=display.none, group="4. Advanced")
 int maxItems = input.int(4, "Max zones / levels kept per side", minval=1, maxval=10, display=display.none, group="4. Advanced")
 int atrLength = input.int(14, "ATR period", minval=2, maxval=200, display=display.none, group="4. Advanced")
@@ -614,7 +618,8 @@ if barstate.islast and panelSize != "Hidden"
     color fg = chart.fg_color
     bool full = panelSize == "Full"
     table.cell(panel, 0, 0, "AURUM GOLD", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
-    table.cell(panel, 1, 0, syminfo.ticker + " " + f_tf(timeframe.period) + " · trend " + f_tf(htf), text_color=fg, text_size=size.small, text_halign=text.align_left)
+    bool testedTF = tfSec == 3600
+    table.cell(panel, 1, 0, syminfo.ticker + " " + f_tf(timeframe.period) + " · trend " + f_tf(htf) + (testedTF ? "" : "  ⚠ tested on 1H"), text_color=testedTF ? fg : color.orange, text_size=size.small, text_halign=text.align_left)
     f_row(1, "TREND", trendDir > 0 ? "UP ▲  only BUY" : trendDir < 0 ? "DOWN ▼  only SELL" : "FLAT  no trades", trendDir > 0 ? BUY_COLOR : trendDir < 0 ? SELL_COLOR : color.gray)
     string nowSession = inLondon and inNewYork ? "London + New York" : inLondon ? "London" : inNewYork ? "New York" : "Asia / closed"
     f_row(2, "SESSION", nowSession + (not sessionFilterOn ? "  (filter off)" : sessionOK ? "  ✓" : "  ✗ no new trades"), not sessionFilterOn ? fg : sessionOK ? BUY_COLOR : color.orange)

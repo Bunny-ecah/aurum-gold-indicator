@@ -19,6 +19,8 @@
 // New trades only when the signal candle opens in the chosen session (London / New York by default).
 // One trade at a time; it closes at TP, SL or after MaxTradeBars candles. Closed trades form the RECORD
 // (a built-in backtest of these rules). Same rules as TradingView v6.
+// Defaults = settings that held up in a 10-year test on real XAUUSD (2012-2022): use the H1 chart.
+// M15 and lower lost money with every setting tested. See BACKTEST-RESULTS.md.
 
 enum AurumSignalMode
 {
@@ -44,12 +46,12 @@ enum AurumSwingSize
 
 input group "1. Signals"
 input AurumSignalMode SignalMode=SIGNALS_BALANCED;      // Signal mode
-input AurumSessions   Sessions=SESSIONS_LONDON_NY;      // Trading sessions (new trades only)
-input AurumSwingSize  SwingSize=SWING_NORMAL;           // Swing size for S/R levels
+input AurumSessions   Sessions=SESSIONS_ALL;            // Trading sessions (new trades only)
+input AurumSwingSize  SwingSize=SWING_LARGE;            // Swing size for S/R levels
 input ENUM_TIMEFRAMES TrendTimeframe=PERIOD_CURRENT;    // Trend timeframe (current = auto)
 input group "2. Risk"
 input double RiskPercent=1.0;                           // Risk per trade (% of balance)
-input double MinReward=1.5;                             // Minimum reward (x risk); closer targets are skipped
+input double MinReward=1.2;                             // Minimum reward (x risk); closer targets are skipped
 input group "3. Display"
 input bool   ShowAll=false;                             // Show all nearby zones and levels (off = nearest only)
 input bool   ShowHistory=true;                          // Show past signals and results
@@ -60,7 +62,7 @@ input bool   SoundAlerts=false;                         // Sound
 input double MaxSpreadPrice=0.50;                       // Pause alerts if ask-bid is wider (price units)
 input group "5. Advanced (defaults are fine)"
 input double ImpulseATR=1.5;                            // Zone impulse: candle body >= ATR x
-input double SLBufferATR=0.2;                           // Stop-loss buffer beyond the area (ATR x)
+input double SLBufferATR=0.5;                           // Stop-loss buffer beyond the area (ATR x)
 input double MinRiskATR=0.5;                            // Minimum stop-loss distance (ATR x)
 input int    MaxItems=4;                                // Max zones / levels kept per side
 input int    ATRPeriod=14;                              // ATR period
@@ -373,7 +375,7 @@ void RenderPanel()
    string rows[16]; color cols[16];
    for(int i=0;i<16;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
 
-   rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF); cols[0]=clrGold;
+   rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF)+(_Period==PERIOD_H1?"":"   (tested on H1)"); cols[0]=_Period==PERIOD_H1?clrGold:clrOrange;
    rows[1]="TREND        "+(trendNow>0?"UP   only BUY":trendNow<0?"DOWN   only SELL":"FLAT   no trades");
    cols[1]=trendNow>0?clrMediumSeaGreen:trendNow<0?clrTomato:clrSilver;
    string nowName=londonNow && newYorkNow?"London + New York":londonNow?"London":newYorkNow?"New York":"Asia / off-hours";

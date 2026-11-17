@@ -1,10 +1,10 @@
-; Aurum v4.1 longer-trade baseline. Attach on H1 (trend: H4 auto). Check spread for your broker.
+; Aurum v4.10 recommended settings (10-year test on real XAUUSD). Attach on H1 (trend: H4 auto).
 SignalMode=0
-Sessions=0
-SwingSize=5
+Sessions=3
+SwingSize=10
 TrendTimeframe=0
 RiskPercent=1.0
-MinReward=1.5
+MinReward=1.2
 ShowAll=false
 ShowHistory=true
 PopupAlerts=true
@@ -12,7 +12,7 @@ PushNotifications=false
 SoundAlerts=false
 MaxSpreadPrice=0.50
 ImpulseATR=1.5
-SLBufferATR=0.2
+SLBufferATR=0.5
 MinRiskATR=0.5
 MaxItems=4
 ATRPeriod=14

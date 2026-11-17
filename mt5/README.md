@@ -10,12 +10,7 @@ Signals-only indicator for gold/USD on desktop MT5. It does **not** place orders
 4. Open the `.mq5` in MetaEditor and press **F7**. It should say 0 errors.
 5. Navigator → right-click **Indicators** → **Refresh**. Drag **AurumConfirmation** onto your gold chart.
 
-Any timeframe works. Optional presets in `presets/`:
-
-| Preset | Chart | Auto trend timeframe |
-| --- | --- | --- |
-| `Scalping-M5.set` | M5 | H1 |
-| `Longer-Trades-H1.set` | H1 | H4 |
+Use the **H1 chart**: the defaults are the settings that held up in a 10-year test on real XAUUSD; M15 and lower lost money with every setting (see [`../BACKTEST-RESULTS.md`](../BACKTEST-RESULTS.md)). The panel title turns orange on other timeframes. `presets/Recommended-H1.set` holds the same values.
 
 ## What you get
 
@@ -28,16 +23,16 @@ Any timeframe works. Optional presets in `presets/`:
 | Group | Input | Default |
 | --- | --- | --- |
 | 1. Signals | Signal mode | Balanced |
-| | Swing size | Normal (5) |
-| | Trading sessions (new trades only) | London + New York |
+| | Swing size | Large (10) |
+| | Trading sessions (new trades only) | All day |
 | | Trend timeframe | Current = auto |
 | 2. Risk | Risk per trade (% of balance) | 1.0 |
-| | Minimum reward (× risk) | 1.5 |
+| | Minimum reward (× risk) | 1.2 |
 | 3. Display | Show all nearby zones and levels | false |
 | | Show past signals and results | true |
 | 4. Alerts | Popup / push / sound | popup on |
 | | Pause alerts if spread is wider than | 0.50 (price units, not pips) |
-| 5. Advanced | Zone impulse ATR, stop buffer, minimum stop, items kept, ATR period, trade time limit (100), history (3000), panel position | keep defaults |
+| 5. Advanced | Stop-loss buffer 0.5 (tested), zone impulse ATR, minimum stop, items kept, ATR period, trade time limit (100), history (3000), panel position | keep defaults |
 | | Broker server time in winter (UTC+hours) | 99 = auto |
 | | Server clock moves with US summer time (manual offset only) | true |
 

@@ -16,3 +16,6 @@ SHA256*.json
 Aurum_v*.csv
 Thumbs.db
 .DS_Store
+backtest/gold.pkl
+backtest/historical-data/
+historical-data/

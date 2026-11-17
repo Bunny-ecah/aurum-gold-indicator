@@ -96,9 +96,9 @@ class PineContract(unittest.TestCase):
             self.assertNotIn("fib", source.lower())
 
     def test_defaults_match_mt5(self):
-        for name, value in (("impulseATR", "1.5"), ("slBufferATR", "0.2"), ("minRiskATR", "0.5"), ("maxItems", "4")):
+        for name, value in (("impulseATR", "1.5"), ("slBufferATR", "0.5"), ("minRiskATR", "0.5"), ("maxItems", "4"), ("minRR", "1.2")):
             self.assertRegex(PINE, rf"{name} = input\.(float|int)\({re.escape(value)},")
-        for name, value in (("ImpulseATR", "1.5"), ("SLBufferATR", "0.2"), ("MinRiskATR", "0.5"), ("MaxItems", "4")):
+        for name, value in (("ImpulseATR", "1.5"), ("SLBufferATR", "0.5"), ("MinRiskATR", "0.5"), ("MaxItems", "4"), ("MinReward", "1.2")):
             self.assertRegex(MQ5, rf"input (double|int)\s+{name}={re.escape(value)};")
 
     def test_empty_array_loops_are_guarded(self):
@@ -108,6 +108,16 @@ class PineContract(unittest.TestCase):
             if re.search(r"for i = array\.size\((\w+)\) - 1 to 0", line):
                 name = re.search(r"array\.size\((\w+)\)", line).group(1)
                 self.assertIn(f"if array.size({name}) > 0", lines[i - 1], line)
+
+    def test_tested_defaults(self):
+        # Defaults = settings that held up in the 10-year real-data test (BACKTEST-RESULTS.md)
+        self.assertIn('string modeInput = input.string("Balanced"', PINE)
+        self.assertIn('string sessionInput = input.string("All day"', PINE)
+        self.assertIn('string swingInput = input.string("Large"', PINE)
+        self.assertIn("Sessions=SESSIONS_ALL;", MQ5)
+        self.assertIn("SwingSize=SWING_LARGE;", MQ5)
+        defaults = Settings()
+        self.assertEqual((defaults.mode, defaults.pivot, defaults.sl_buffer, defaults.min_rr), ("Balanced", 10, 0.5, 1.2))
 
     def test_inputs_are_few(self):
         self.assertLessEqual(PINE.count("= input."), 18)
@@ -163,7 +173,7 @@ class ModelBehaviour(unittest.TestCase):
         self.assertIn("Demand", last.why)
         self.assertGreaterEqual(last.score, 2)
         self.assertTrue(last.sl < 2649.0 < last.entry < last.tp)
-        self.assertGreaterEqual((last.tp - last.entry) / (last.entry - last.sl), 1.5)
+        self.assertGreaterEqual((last.tp - last.entry) / (last.entry - last.sl), 1.2)
 
     def test_supply_pullback_gives_sell(self):
         bars = mirror(demand_scenario())
@@ -200,7 +210,7 @@ class ModelBehaviour(unittest.TestCase):
                     else:
                         self.assertTrue(s.sl > s.entry > s.tp, s)
                     rr = abs(s.tp - s.entry) / abs(s.entry - s.sl)
-                    self.assertTrue(1.5 - 1e-9 <= rr <= 3 + 1e-9, rr)
+                    self.assertTrue(1.2 - 1e-9 <= rr <= 3 + 1e-9, rr)
 
     def test_mode_frequency(self):
         counts = {}

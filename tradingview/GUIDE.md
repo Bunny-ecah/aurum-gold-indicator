@@ -10,7 +10,7 @@ It is **one all-in-one script**: the panel and signals on the chart *and* the St
 
 **MT5:** see [`../mt5/README.md`](../mt5/README.md).
 
-Recommended start: **XAUUSD 15m chart** (trend from 4H) or **5m** (trend from 1H). Leave the settings at their defaults, except **Account balance** and **Risk %** on TradingView.
+Use the **XAUUSD 1H chart** (trend from 4H). The defaults are the settings that held up in a 10-year test on real gold data; 15m and lower lost money with every setting (see [`../BACKTEST-RESULTS.md`](../BACKTEST-RESULTS.md)). The panel shows ⚠ on other timeframes. Leave the settings at their defaults, except **Account balance** and **Risk %** on TradingView.
 
 ## Read the panel in 3 seconds
 
@@ -119,7 +119,7 @@ How to judge it:
 
 - **avg R above 0** over many trades = the rules made money on that history. Below 0 = they lost.
 - You need **at least 30–50 trades** before the numbers mean anything. Fewer than that is mostly luck.
-- Compare timeframes and modes: put the indicator on 5m, 15m and 1H, then switch Balanced/Strict, and write down RECORD for each.
+- On the 1H chart, expect about 2 trades a month; a few months of history gives only a handful of trades, so judge it over the longest history TradingView loads.
 - **LAST 20** going negative while RECORD is positive = the market changed; be careful.
 
 What the record does **not** include: spread, commission, slippage, and news spikes. Gold spreads are often 0.20–0.50, so a real result is a bit worse, especially with small stops on 1m/5m. Entry is the signal candle's close; your real fill will differ slightly.
@@ -134,15 +134,7 @@ The same script also places *simulated* orders with the panel's entry, stop and 
 4. Settings → **Inputs**: mode, sessions, minimum reward and *Risk per trade (%)* apply to the backtest too. *Account balance* is only for the panel's lot size; the backtest uses *Initial capital*.
 5. Read **Net profit**, **Max drawdown**, **Profit factor** (above 1.3 is good, below 1.0 loses), **Total closed trades** (need 50+).
 
-Suggested test plan, writing the results in a table:
-
-| Chart | Mode | Sessions | Trades | Win % | Profit factor | Max drawdown |
-| --- | --- | --- | --- | --- | --- | --- |
-| 15m | Balanced | London + New York | | | | |
-| 15m | Balanced | All day | | | | |
-| 5m | Balanced | London + New York | | | | |
-| 1H | Balanced | London + New York | | | | |
-| 15m | Strict | London + New York | | | | |
+Reference: on real XAUUSD 2012–2022 the default settings on 1H gave **239 trades, 43% win, profit factor 1.19, worst drawdown −11.6R** (full details and how it was tested: [`../BACKTEST-RESULTS.md`](../BACKTEST-RESULTS.md); rerun it with [`../backtest/`](../backtest/README.md)). Use the Strategy Tester to check that recent data still looks like this.
 
 Small differences between the panel's RECORD and the Strategy Tester are normal: the Strategy Tester includes the commission, and when one candle touches both stop and target it guesses the order of prices inside the candle, while the RECORD always counts that as a loss.
 
@@ -155,7 +147,7 @@ Other ways to test:
 
 TradingView: create an alert on the script and pick **alert() function calls only**. The message has everything:
 
-`Aurum BUY XAUUSD 15m | Quality A 77/100 | Entry 4082.50 | SL 4076.20 | TP 4095.10 | RR 1:2.0 = +2.0% if TP | Lot 0.01 | Demand (fresh)`
+`Aurum BUY XAUUSD 1H | Quality A 77/100 | Entry 4082.50 | SL 4076.20 | TP 4095.10 | RR 1:2.0 = +2.0% if TP | Lot 0.01 | Demand (fresh)`
 
 Recreate alerts after changing the script or settings.
 
@@ -164,16 +156,16 @@ Recreate alerts after changing the script or settings.
 | Group | Setting | Default |
 | --- | --- | --- |
 | 1. Signals | Signal mode | Balanced |
-| | Swing size | Normal |
+| | Swing size | Large |
 | | Trend timeframe | auto |
-| | Trading sessions | London + New York |
-| | Minimum reward (× risk) | 1.5 |
+| | Trading sessions | All day |
+| | Minimum reward (× risk) | 1.2 |
 | 2. Risk | Account balance ($) *(TradingView only; MT5 reads it from the account)* | 1000 |
 | | Risk per trade (%) | 1 |
 | 3. Display | Show all nearby zones and levels | off |
 | | Panel: Full / Compact / Hidden | Full |
 | | Show past signals and results | on |
-| 4. Advanced | Zone impulse, stop buffer, minimum stop, items kept, ATR period, trade time limit, contract size (100 oz) | keep defaults |
+| 4. Advanced | Stop-loss buffer **0.5** (tested; 0.2 lost money), zone impulse, minimum stop, items kept, ATR period, trade time limit, contract size (100 oz) | keep defaults |
 
 ## Limits
 
