@@ -1,5 +1,5 @@
 //@version=6
-indicator("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=60, max_labels_count=500)
+strategy("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_bars_back=2000, max_lines_count=100, max_boxes_count=60, max_labels_count=500, initial_capital=1000, currency=currency.USD, default_qty_type=strategy.fixed, commission_type=strategy.commission.cash_per_contract, commission_value=0.15, slippage=0, process_orders_on_close=true, margin_long=1, margin_short=1, pyramiding=0)
 
 // =====================================================================
 // AURUM GOLD v6 — simple supply/demand + support/resistance signals for XAUUSD
@@ -13,8 +13,12 @@ indicator("Aurum Gold v6 - SNR + SND", shorttitle="Aurum v6", overlay=true, max_
 // One trade at a time. The trade closes at TP (+R), SL (-1R) or after 100 candles.
 // Every closed trade goes into the RECORD row, which is a built-in backtest of the rules.
 //
+// ALL-IN-ONE: this is a TradingView *strategy*, so one script gives both the trading panel and the
+// Strategy Tester report (net profit, drawdown, profit factor). It does not place real orders.
+// Backtest cost: commission 0.15 per oz on entry and exit (about 0.30 spread per trade);
+// change it in Settings > Properties > Commission. Made for spot XAUUSD (1 contract = 1 oz).
+//
 // Signals are decided on CLOSED candles only, so a printed signal does not disappear.
-// The block between "SHARED RULES" markers is identical in AurumStrategy.pine (backtest version).
 // Shared rules with MT5: mt5/AurumCore.mqh. Demo research — not a guaranteed strategy.
 // =====================================================================
 
@@ -26,8 +30,8 @@ string htfInput = input.timeframe("", "Trend timeframe (empty = auto)", display=
 float minRR = input.float(1.5, "Minimum reward (× risk)", minval=1.0, maxval=5, step=0.1, display=display.none, group="1. Signals", tooltip="Skip a setup when the next opposite zone/level is closer than this.\n1.5 means you must be able to win at least 1.5x what you risk.")
 
 // ---------- 2. Risk ----------
-float balance = input.float(1000, "Account balance ($)", minval=1, display=display.none, group="2. Risk")
-float riskPct = input.float(1.0, "Risk per trade (%)", minval=0.1, maxval=10, step=0.1, display=display.none, group="2. Risk")
+float balance = input.float(1000, "Account balance ($)", minval=1, display=display.none, group="2. Risk", tooltip="Used for the LOT SIZE on the panel.\nThe backtest uses Settings > Properties > Initial capital instead.")
+float riskPct = input.float(1.0, "Risk per trade (%)", minval=0.1, maxval=10, step=0.1, display=display.none, group="2. Risk", tooltip="Lot size on the panel, and position size in the backtest (% of current equity).")
 
 // ---------- 3. Display ----------
 bool showAll = input.bool(false, "Show all nearby zones and levels", display=display.none, group="3. Display", tooltip="Off: only the nearest area above and below price (clean chart).")
@@ -87,6 +91,7 @@ if barstate.isconfirmed and inTrade and bar_index > tBar
     else if bar_index - tBar >= maxBars
         closedR := (close - tEntry) * tDir / risk
         lastHow := "Time exit"
+        strategy.close_all(comment="Time exit")
     if not na(closedR)
         inTrade := false
         array.push(results, closedR)
@@ -97,11 +102,11 @@ if barstate.isconfirmed and inTrade and bar_index > tBar
             color rc = closedR > 0 ? color.teal : closedR < 0 ? color.red : color.gray
             label.new(bar_index, tDir > 0 ? high : low, lastHow + " " + f_r(closedR), yloc=tDir > 0 ? yloc.abovebar : yloc.belowbar, style=label.style_none, textcolor=rc, size=size.small)
 
-bool canOpen = not inTrade
+// No new trade on the candle where the time limit closed a trade (same rule in MT5 and the model)
+bool canOpen = not inTrade and not (not na(closedR) and lastHow == "Time exit")
 
-// ===================== SHARED RULES START =====================
-// Keep this block IDENTICAL in AurumSignalAudit.pine and AurumStrategy.pine (a test checks it).
-// It needs: the signal/advanced inputs and `canOpen` (true when no trade is open).
+// ===================== RULES START =====================
+// The trading rules (same as mt5/AurumCore.mqh). Needs the inputs and `canOpen`.
 // Fixed rule constants (same values as mt5/AurumCore.mqh)
 float TOUCH_ATR = 0.2      // how close counts as "touching" an area
 float MERGE_ATR = 0.3      // S/R levels closer than this are merged
@@ -355,7 +360,7 @@ if barstate.isconfirmed and ready
         else
             f_addLevel(resP, resB, pl, bar_index - pivotLen, mergeTol, maxItems)
 
-// ===================== SHARED RULES END =====================
+// ===================== RULES END =====================
 
 // ---------- Open the new trade, mark it and alert (indicator only) ----------
 bool buySignal = newDir > 0
@@ -378,15 +383,18 @@ if newDir != 0
             label.new(bar_index, low, side, yloc=yloc.belowbar, style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.small, tooltip=plan)
         else
             label.new(bar_index, high, side, yloc=yloc.abovebar, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small, tooltip=plan)
+    // Backtest order: same entry, stop and target as the panel; size = risk % of equity
+    string orderId = newDir > 0 ? "BUY" : "SELL"
+    float qty = strategy.equity * riskPct / 100 / (math.abs(newEntry - newSL) * syminfo.pointvalue)
+    strategy.entry(orderId, newDir > 0 ? strategy.long : strategy.short, qty=qty, comment=orderId)
+    strategy.exit("Exit " + orderId, from_entry=orderId, stop=newSL, limit=newTP, comment_loss="SL", comment_profit="TP")
     alert("Aurum " + side + " " + syminfo.ticker + " " + f_tf(timeframe.period) + " | Entry " + f_price(newEntry) + " | SL " + f_price(newSL) + " | TP " + f_price(newTP) + " | RR 1:" + str.tostring(rr, "#.#") + " | Lot " + str.tostring(lot, "#.##") + " | " + newWhy, alert.freq_once_per_bar_close)
 
 // ---------- Data window (for checking / exporting results) and alerts ----------
 plot(buySignal ? 1 : sellSignal ? -1 : 0, "Signal: BUY=1 SELL=-1", display=display.data_window)
 plot(closedR, "Trade result (R)", display=display.data_window)
 plot(trendDir, "Trend: UP=1 DOWN=-1", display=display.data_window)
-alertcondition(buySignal, title="Aurum BUY", message="Aurum BUY | {{ticker}} {{interval}} | close {{close}} | see Entry/SL/TP on chart")
-alertcondition(sellSignal, title="Aurum SELL", message="Aurum SELL | {{ticker}} {{interval}} | close {{close}} | see Entry/SL/TP on chart")
-alertcondition(buySignal or sellSignal, title="Aurum BUY or SELL", message="Aurum signal | {{ticker}} {{interval}} | close {{close}} | see Entry/SL/TP on chart")
+bgcolor(sessionFilterOn and not sessionOK ? color.new(color.gray, 94) : na, title="Outside trading session")
 
 // ---------- Nearest areas ----------
 // Nearest SELL area above price: supply zone or resistance. Returns [kind, top, bottom, startBar];

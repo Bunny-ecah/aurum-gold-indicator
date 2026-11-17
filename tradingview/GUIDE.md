@@ -1,10 +1,12 @@
-# Aurum Gold — trader's guide (TradingView v6 / MT5 v4)
+# Aurum Gold — trader's guide (TradingView v6 / MT5 v4.10)
 
 Source: `tradingview/AurumSignalAudit.pine` and `mt5/AurumConfirmation.mq5`. Both use the same rules (`mt5/AurumCore.mqh`).
 
 ## Install (2 minutes)
 
-**TradingView:** copy all of `AurumSignalAudit.pine` → **Pine Editor** → paste over the template → **Save** → **Add to chart**. Remove older Aurum versions first.
+**TradingView:** copy all of `AurumSignalAudit.pine` → **Pine Editor** → paste over your existing script (or *Create new → Strategy*) → **Save** → **Add to chart**. Remove older Aurum versions first.
+
+It is **one all-in-one script**: the panel and signals on the chart *and* the Strategy Tester report, so it needs only one saved script and one chart slot (fits the TradingView Basic plan). It never places real orders. TradingView draws its own small trade arrows next to the BUY/SELL labels; that is normal for a strategy.
 
 **MT5:** see [`../mt5/README.md`](../mt5/README.md).
 
@@ -83,14 +85,14 @@ How to judge it:
 
 What the record does **not** include: spread, commission, slippage, and news spikes. Gold spreads are often 0.20–0.50, so a real result is a bit worse, especially with small stops on 1m/5m. Entry is the signal candle's close; your real fill will differ slightly.
 
-## Full backtest: the Strategy version (TradingView)
+## Full backtest: the Strategy Tester (TradingView)
 
-`tradingview/AurumStrategy.pine` uses **exactly the same rule code** as the indicator (a test checks this) and runs it in TradingView's Strategy Tester, which reports net profit, max drawdown, profit factor, win rate and every trade.
+The same script also places *simulated* orders with the panel's entry, stop and target, so TradingView's Strategy Tester reports net profit, max drawdown, profit factor, win rate and every trade.
 
-1. Pine Editor → new script → paste all of `AurumStrategy.pine` → **Save** → **Add to chart**. (Use OANDA:XAUUSD or another spot XAUUSD where 1 contract = 1 oz.)
+1. Use OANDA:XAUUSD or another spot XAUUSD where 1 contract = 1 oz.
 2. Open the **Strategy Tester** tab under the chart.
 3. Settings → **Properties**: *Initial capital* (default 1000), *Commission* 0.15 per contract (= about 0.30 spread per trade; change it to your broker's spread ÷ 2).
-4. Settings → **Inputs**: same as the indicator (mode, sessions, minimum reward), plus *Risk per trade (% of equity)*.
+4. Settings → **Inputs**: mode, sessions, minimum reward and *Risk per trade (%)* apply to the backtest too. *Account balance* is only for the panel's lot size; the backtest uses *Initial capital*.
 5. Read **Net profit**, **Max drawdown**, **Profit factor** (above 1.3 is good, below 1.0 loses), **Total closed trades** (need 50+).
 
 Suggested test plan, writing the results in a table:
@@ -103,7 +105,7 @@ Suggested test plan, writing the results in a table:
 | 1H | Balanced | London + New York | | | | |
 | 15m | Strict | London + New York | | | | |
 
-Small differences from the indicator's RECORD are normal: the Strategy Tester includes the commission, and when one candle touches both stop and target it guesses the order of prices inside the candle, while the RECORD always counts that as a loss.
+Small differences between the panel's RECORD and the Strategy Tester are normal: the Strategy Tester includes the commission, and when one candle touches both stop and target it guesses the order of prices inside the candle, while the RECORD always counts that as a loss.
 
 Other ways to test:
 
@@ -112,7 +114,7 @@ Other ways to test:
 
 ## Alerts
 
-TradingView: create an alert on the indicator and pick **Any alert() function call**. The message has everything:
+TradingView: create an alert on the script and pick **alert() function calls only**. The message has everything:
 
 `Aurum BUY XAUUSD 15m | Entry 4082.50 | SL 4076.20 | TP 4095.10 | RR 1:2.0 | Lot 0.01 | Demand`
 

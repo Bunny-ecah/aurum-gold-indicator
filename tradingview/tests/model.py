@@ -113,9 +113,12 @@ def run(bars, trend, s=Settings(), allowed=None):
         if a is None or a <= 0 or i <= 2 * L + 14:
             continue
         # 0) follow the open trade
+        time_exit = False
         if trade is not None:
             r = trade_step(trade.side, trade.entry, trade.sl, trade.tp, bars[i], i - trade.bar, s.max_bars)
             if r is not None:
+                hit = (l <= trade.sl or h >= trade.tp) if trade.side > 0 else (h >= trade.sl or l <= trade.tp)
+                time_exit = not hit     # no new trade on a time-exit candle
                 trade.exit_bar, trade.result, trade = i, r, None
         tol = TOUCH_ATR * a
         d_hits = [z for z in demand if z[0] > z[1] and l <= z[0] + tol and c > z[0]]
@@ -127,7 +130,7 @@ def run(bars, trend, s=Settings(), allowed=None):
         need = POINTS_NEEDED[s.mode]
         buy_raw = bull_rejection(o, h, l, c) and buy_score >= need and trend[i] > 0
         sell_raw = bear_rejection(o, h, l, c) and sell_score >= need and trend[i] < 0
-        in_session = allowed is None or allowed[i]
+        in_session = (allowed is None or allowed[i]) and not time_exit
         buy = buy_raw and not sell_raw and trade is None and in_session     # one trade at a time
         sell = sell_raw and not buy_raw and trade is None and in_session
         if buy or sell:

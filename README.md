@@ -7,8 +7,7 @@
 | Platform | Current source | Status |
 | --- | --- | --- |
 | MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v4.10; core tests pass; MetaEditor compile and demo testing outstanding |
-| TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v6 indicator; model/contract tests pass; Pine Editor compile and demo testing outstanding |
-| TradingView backtest | [`tradingview/AurumStrategy.pine`](tradingview/AurumStrategy.pine) | Strategy Tester version with identical rules, risk-% sizing and spread cost |
+| TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v6 all-in-one (panel + signals + Strategy Tester in one script); compiles in Pine Editor; demo testing outstanding |
 
 Earlier TradingView sources are retained for comparison: basic indicator, multi-timeframe v2 and entry-planner v3. Install only the version you intend to use, rather than all of them on one chart.
 
@@ -19,7 +18,7 @@ Earlier TradingView sources are retained for comparison: basic indicator, multi-
 - **SNR + SND:** support/resistance from swing points and supply/demand zones from strong impulse candles. Only the nearest area above and below price is drawn.
 - **Trade plan:** entry, stop loss, take profit, reward-to-risk and **lot size** for your balance and risk %. Setups with too little room to the target are skipped.
 - **RECORD:** every signal is followed to its result, giving win %, average R and total R on the loaded history: a built-in backtest of the rules.
-- **Strategy version** for TradingView's Strategy Tester: net profit, drawdown, profit factor, with costs.
+- **All-in-one TradingView script:** the same script also runs in the Strategy Tester (net profit, drawdown, profit factor, with costs), so it needs only one saved script.
 - Any timeframe, few settings, closed-candle signals that do not repaint.
 
 How to use it, read the panel and backtest: [`tradingview/GUIDE.md`](tradingview/GUIDE.md).
@@ -41,7 +40,7 @@ See [`mt5/README.md`](mt5/README.md) for rules, spread units, push setup and acc
 1. Copy the full contents of `tradingview/AurumSignalAudit.pine`.
 2. In TradingView open **Pine Editor**, create a new indicator, replace the template, **Save**, then **Add to chart**.
 3. Remove earlier Aurum versions from that chart. Any timeframe works; 5m, 15m and 1h are good starting points.
-4. Set **Account balance** and **Risk %** in the settings. For alerts choose **Any alert() function call** to get the full trade plan in the message.
+4. Set **Account balance** and **Risk %** in the settings. For alerts choose **alert() function calls only** to get the full trade plan in the message. Open the **Strategy Tester** tab for the backtest report.
 
 See [`tradingview/GUIDE.md`](tradingview/GUIDE.md). Older files (`AurumConfirmation.pine`, `AurumMultiTimeframe.pine`, `AurumEntryPlanner.pine`) are kept only for reference.
 
@@ -53,7 +52,7 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_tradingview.py
 ```
 
-This runs 29 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+This runs 28 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 
@@ -65,7 +64,7 @@ On Linux/macOS: `g++ -std=c++17 -DAURUM_TEST_MAIN mt5/tests/core_tests.cpp -o co
 
 ## Remaining work
 
-- Compile v6 in TradingView Pine Editor and v4 in MetaEditor; fix any compiler diagnostics.
+- Compile the v6 all-in-one strategy in Pine Editor (the indicator form already compiled and ran) and v4.10 in MetaEditor; fix any compiler diagnostics.
 - Check zones, S/R and signals visually with Bar Replay and a live demo feed in all three modes.
 - Compare TradingView and MT5 signals on the same candles (feeds differ, so small differences are expected).
 - Verify alerts and phone push end-to-end.

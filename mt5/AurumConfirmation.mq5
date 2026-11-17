@@ -586,6 +586,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
       if(i==1) { lastClose=c.close; lastATR=atr[1]; }
 
       // 0) Follow the open trade: SL / TP / time limit
+      bool timeExitNow=false;   // no new trade on a time-exit candle
       if(inTrade && k>tK)
       {
          double r=0;
@@ -594,6 +595,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
             bool slHit=tDir>0?c.low<=tSL:c.high>=tSL;
             bool tpHit=tDir>0?c.high>=tTP:c.low<=tTP;
             lastHow=slHit?"SL":tpHit?"TP":"Time exit";
+            timeExitNow=!slHit && !tpHit;
             inTrade=false; lastDir=tDir; lastR=r; lastExitK=k;
             int n=ArraySize(results); ArrayResize(results,n+1); results[n]=r;
             if(ShowHistory)
@@ -638,7 +640,7 @@ int OnCalculate(const int rates_total,const int prev_calculated,
 
       long barUTC=(long)time[i]-AurumServerOffset(winterOffset,followsUS,(long)time[i]);
       bool sessionOK=!sessionFilterOn || AurumSessionAllowed((int)Sessions,barUTC);
-      int dir=inTrade?0:AurumDecide((int)SignalMode,trendDir,AurumBullRejection(c),buyScore,AurumBearRejection(c),sellScore);
+      int dir=(inTrade || timeExitNow)?0:AurumDecide((int)SignalMode,trendDir,AurumBullRejection(c),buyScore,AurumBearRejection(c),sellScore);
       if(dir!=0)
       {
          double entry=c.close,stop=0,nearest=0,tp=0;

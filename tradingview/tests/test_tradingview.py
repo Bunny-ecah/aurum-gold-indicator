@@ -14,13 +14,7 @@ from model import POINTS_NEEDED, Settings, lots, record, run, target, trade_step
 
 ROOT = Path(__file__).resolve().parents[2]
 PINE = (ROOT / "tradingview" / "AurumSignalAudit.pine").read_text(encoding="utf-8")
-STRATEGY = (ROOT / "tradingview" / "AurumStrategy.pine").read_text(encoding="utf-8")
 
-
-def shared_block(source):
-    start = source.index("// ===================== SHARED RULES START")
-    end = source.index("// ===================== SHARED RULES END")
-    return source[start:end]
 CORE = (ROOT / "mt5" / "AurumCore.mqh").read_text(encoding="utf-8")
 MQ5 = (ROOT / "mt5" / "AurumConfirmation.mq5").read_text(encoding="utf-8")
 
@@ -73,7 +67,7 @@ def random_bars(seed, n=2500):
 class PineContract(unittest.TestCase):
     def test_version_and_title(self):
         self.assertTrue(PINE.startswith("//@version=6"))
-        self.assertIn('indicator("Aurum Gold v6', PINE)
+        self.assertIn('strategy("Aurum Gold v6', PINE)
 
     def test_signals_only_on_closed_candles(self):
         self.assertIn("if barstate.isconfirmed and ready\n    float tol", PINE)
@@ -126,7 +120,6 @@ class PineContract(unittest.TestCase):
         self.assertIn("AurumMax(2.0,minRR)", CORE)
         self.assertLess(PINE.index("if slHit\n        closedR := -1.0"), PINE.index("else if tpHit"))
         self.assertLess(CORE.index("if(stopHit)"), CORE.index("if(targetHit)"))
-        self.assertIn("bool canOpen = not inTrade", PINE)
         self.assertIn("and canOpen    // one trade at a time", PINE)
 
     def test_panel_has_status_and_record(self):
@@ -134,25 +127,22 @@ class PineContract(unittest.TestCase):
             self.assertIn(text, PINE)
 
 
-class StrategyContract(unittest.TestCase):
-    def test_strategy_uses_identical_rules(self):
-        self.assertEqual(shared_block(PINE), shared_block(STRATEGY))
+class AllInOneContract(unittest.TestCase):
+    """One script = panel + signals + Strategy Tester (TradingView Basic allows one saved script)."""
 
-    def test_rule_inputs_identical(self):
-        block = shared_block(PINE)
-        for line in PINE.splitlines():
-            if "= input." in line:
-                name = line.split()[1]
-                if re.search(rf"\b{name}\b", block):
-                    self.assertIn(line, STRATEGY.splitlines(), name)
+    def test_is_a_strategy(self):
+        self.assertTrue(PINE.startswith("//@version=6\nstrategy("))
+        for setting in ("process_orders_on_close=true", "pyramiding=0", "commission_value=0.15", "initial_capital=1000"):
+            self.assertIn(setting, PINE)
+        self.assertNotIn("alertcondition(", PINE)   # not allowed in strategies
+        self.assertFalse((ROOT / "tradingview" / "AurumStrategy.pine").exists())
 
-    def test_strategy_settings(self):
-        self.assertTrue(STRATEGY.startswith("//@version=6\nstrategy("))
-        self.assertIn("process_orders_on_close=true", STRATEGY)
-        self.assertIn("pyramiding=0", STRATEGY)
-        self.assertIn("commission_value=0.15", STRATEGY)
-        self.assertIn("stop=newSL, limit=newTP", STRATEGY)
-        self.assertIn("bool canOpen = strategy.position_size == 0 or timeExit", STRATEGY)
+    def test_orders_follow_the_panel(self):
+        self.assertIn("stop=newSL, limit=newTP", PINE)
+        self.assertIn('strategy.close_all(comment="Time exit")', PINE)
+        self.assertIn('bool canOpen = not inTrade and not (not na(closedR) and lastHow == "Time exit")', PINE)
+        self.assertIn("timeExitNow=!slHit && !tpHit;", MQ5)
+        self.assertLess(PINE.index("strategy.entry("), PINE.index("alert(\"Aurum \""))
 
     def test_sessions(self):
         self.assertIn('time(timeframe.period, "0800-1700:23456", "Europe/London")', PINE)
