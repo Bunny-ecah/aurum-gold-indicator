@@ -91,3 +91,4 @@ Lessons: gold's 15m noise hits zone stops too often; a stop buffer of 0.5 ATR ma
    - Clearly worse than the RECORD → find out why (spread, late entries, skipped trades) before going further.
    - Losing → stop and review; do not increase risk to "win it back".
 7. Check **BY GRADE**: if grade C keeps losing, trade only A and B.
+8. **1H and 30m side by side:** the web app tracks both (panel card *Side by side · 1H vs 30m*, both in the Journal) and the Telegram bot sends both by default. Mark every signal of both in the Journal. After **20 trades each**, compare them: keep the one that is closer to its backtest and profitable; drop the other.

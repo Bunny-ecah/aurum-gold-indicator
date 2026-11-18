@@ -43,7 +43,7 @@ Repository **Settings → Secrets and variables → Actions**:
 | `AURUM_RISK_PCT` | `1` | risk per trade in % |
 | `AURUM_MAX_LOSSES` | `2` | daily loss limit shown in messages (0 = off) |
 | `AURUM_TIMEZONE` | `Asia/Kuala_Lumpur` | time zone for times in messages |
-| `AURUM_SIGNAL_TF` | `60` | `60` = 1H signals (default), `30` = 30m signals (New York session), `60,30` = both |
+| `AURUM_SIGNAL_TF` | `60,30` | both 1H and 30m signals (default), or only `60` (1H) or only `30` (30m, New York session) |
 
 ## 4. Switch it on and test
 

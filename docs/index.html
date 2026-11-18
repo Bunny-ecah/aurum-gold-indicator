@@ -107,6 +107,9 @@ label.f input[type=checkbox]{width:16px;height:16px}
 .prog{display:inline-block;width:90px;height:7px;border-radius:4px;background:var(--chip);overflow:hidden;vertical-align:middle;margin-right:6px}
 .prog i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .newsrow.warn .v{color:var(--warn);font-weight:600}
+table.cmp{margin:6px 0 2px;font-size:12.5px}
+table.cmp th{text-align:right}table.cmp th:first-child,table.cmp td:first-child{text-align:left;color:var(--muted)}
+table.cmp td{text-align:right}
 #installBtn{display:none}
 #mstat{position:absolute;right:76px;top:8px;display:none;padding:5px 10px;border-radius:10px;font-weight:800;font-size:13px;letter-spacing:.04em;background:var(--chip);border:1px solid var(--line);pointer-events:none}
 #mstat.buy{color:var(--up);border-color:var(--up)}#mstat.sell{color:var(--down);border-color:var(--down)}#mstat.wait{color:var(--accent2)}
@@ -166,6 +169,8 @@ a{color:var(--accent2)}
     <div class="actions" id="actions"></div>
     <div class="sec" id="recTitle">Record</div>
     <div class="rows" id="recRows"></div>
+    <div class="sec" id="cmpTitle">Side by side · 1H vs 30m</div>
+    <div class="rows" id="cmpRows"></div>
     <div class="tabs">
       <button class="btn on" data-tab="trades">Trades</button>
       <button class="btn" data-tab="journal">Journal</button>
@@ -190,7 +195,7 @@ var SETUP = null, BAR = H;           // signal timeframe (1H or 30m), set from c
 // ---------------- settings ----------------
 var SKEY = "aurum.web.settings.v1";
 var cfg = Object.assign({}, A.DEFAULTS, { source: "paxg", tdKey: "", showAll: false, showPast: true, alerts: false, theme: "",
-  spread: 0.30, brokerOff: 0, brokerAt: 0, showEMA: true, showSess: true, viewTf: "60", showNews: true, maxLosses: 2, demoStart: 0, sigTf: "60" });
+  spread: 0.30, brokerOff: 0, brokerAt: 0, showEMA: true, showSess: true, viewTf: "60", showNews: true, maxLosses: 2, demoStart: 0, sigTf: "60", compare: true });
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(SKEY) || "{}")); } catch (e) {}
 function save() { try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch (e) {} }
 if (cfg.theme) document.documentElement.setAttribute("data-theme", cfg.theme);
@@ -342,7 +347,7 @@ function notifyClose(s) {
   try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum trade closed", { body: msg }); } catch (e) {}
 }
 var flashUntil = 0, flashText = "";
-function flashTitle(t) { flashText = t; flashUntil = Date.now() + 30 * 60000; }
+function flashTitle(t) { flashText = t; flashUntil = Date.now() + 30 * 60000; setTimeout(function () { try { renderHeader(); } catch (e) {} }, 0); }
 function alertBtn() {
   $("alertBtn").textContent = cfg.alerts ? "🔔 Alerts on" : "🔔 Alerts off";
   $("alertBtn").classList.toggle("on", !!cfg.alerts);
@@ -501,6 +506,139 @@ function pollTwelve() {
   }).catch(function (e) { setLive("bad", "update failed: " + e.message.slice(0, 40)); });
 }
 
+// ---------------- the other timeframe, side by side (1H and 30m demo comparison) ----------------
+// Runs the other tested setup in the background with its own tested settings: alerts for its signals,
+// a comparison card and its signals in the Journal. The chart shows the signal timeframe.
+var other = { tf: null, closed: [], result: null, trend: null, booted: false, timer: null, gen: 0, err: null };
+function otherTf() { return cfg.sigTf === "60" ? "30" : "60"; }
+function otherSetup() { return A.SETUPS[other.tf]; }
+function mergeOther(b) {
+  if (!A.goldMarketOpen(b.t) || !b.final) return false;
+  var last = other.closed[other.closed.length - 1];
+  if (last && b.t <= last.t) { if (b.t === last.t) other.closed[other.closed.length - 1] = strip(b); return false; }
+  other.closed.push(strip(b)); return true;
+}
+function otherFetch(full) {
+  var su = otherSetup(), barMs = su.barMin * 60000, now = Date.now();
+  if (cfg.source === "twelve" && cfg.tdKey) {
+    var gap = other.closed.length ? Math.ceil((now - other.closed[other.closed.length - 1].t) / barMs) + 2 : 5000;
+    return fetchJSON(tdUrl(full ? 5000 : Math.min(5000, Math.max(3, gap)), su.barMin === 30 ? "30min" : "1h")).then(function (d) {
+      var ch = false; tdBars(d, su.barMin).forEach(function (b) { ch = mergeOther(b) || ch; }); return ch;
+    });
+  }
+  var iv = su.barMin === 30 ? "30m" : "1h";
+  if (full) {
+    var pages = [], end = null, n = 0;
+    var next = function () {
+      return binKlines(end, 1000, null, iv).then(function (d) {
+        if (!d.length) return;
+        pages.unshift(d); end = +d[0][0] - 1; n++;
+        if (n < 4 && d.length === 1000) return next();
+      });
+    };
+    return next().then(function () { pages.forEach(function (pg) { pg.forEach(function (k) { mergeOther(binBar(k, now)); }); }); return true; });
+  }
+  var from = other.closed.length ? other.closed[other.closed.length - 1].t : null;
+  return binKlines(null, 1000, from, iv).then(function (d) { var ch = false; d.forEach(function (k) { ch = mergeOther(binBar(k, now)) || ch; }); return ch; });
+}
+function computeOther() {
+  if (other.closed.length < 300) return;
+  var su = otherSetup(), bars = other.closed, ss = su.settings.sessions;
+  other.trend = A.trendHTF(bars, su.barMin, su.htfMin);
+  var lon = bars.map(function (b) { return A.inLondon(b.t); }), ny = bars.map(function (b) { return A.inNewYork(b.t); });
+  var allowed = ss === "All day" ? null : bars.map(function (b, i) { return ss === "New York only" ? ny[i] : ss === "London only" ? lon[i] : lon[i] || ny[i]; });
+  var prev = other.result;
+  other.result = A.run(bars, other.trend.dir, Object.assign({}, su.settings, { balance: cfg.balance, riskPct: cfg.riskPct }), { allowed: allowed, london: lon, newyork: ny });
+  if (other.booted && prev) {
+    var lastI = bars.length - 1;
+    other.result.signals.forEach(function (x) { if (x.exitBar === lastI) notifyOtherClose(x); });
+    var ls = other.result.signals[other.result.signals.length - 1];
+    if (ls && ls.bar === lastI) notifyOther(ls);
+  }
+}
+function notifyOther(x) {
+  var key = "aurum.web.lastAlert." + other.tf;
+  try { if (localStorage.getItem(key) === String(x.t)) return; localStorage.setItem(key, String(x.t)); } catch (e) {}
+  var su = otherSetup(), side = x.side > 0 ? "BUY" : "SELL";
+  toast(su.label + " " + side + " NOW · see Side by side in the panel");
+  flashTitle(su.label + " " + side + " NOW");
+  if (!cfg.alerts) return;
+  beep();
+  try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum " + side + " gold " + su.label, { body: "Grade " + x.grade + " | Entry " + f2(x.entry) + " | SL " + f2(x.sl) + " | TP " + f2(x.tp) + " | RR 1:" + x.rr.toFixed(1) }); } catch (e) {}
+}
+function notifyOtherClose(x) {
+  var key = "aurum.web.lastClose." + other.tf;
+  try { if (localStorage.getItem(key) === String(x.t)) return; localStorage.setItem(key, String(x.t)); } catch (e) {}
+  var msg = otherSetup().label + " " + (x.side > 0 ? "BUY" : "SELL") + " closed: " + x.how + " " + fr(net(x));
+  toast(msg);
+  if (cfg.alerts) { beep(); try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum trade closed", { body: msg }); } catch (e) {} }
+}
+function stopOther() { clearInterval(other.timer); other.timer = null; other.gen++; other.closed = []; other.result = null; other.booted = false; other.err = null; }
+function startOther() {
+  stopOther();
+  if (!cfg.compare) { renderCompare(); return; }
+  other.tf = otherTf();
+  var myGen = other.gen;
+  otherFetch(true).then(function () {
+    if (myGen !== other.gen) return;
+    computeOther(); other.booted = true; renderCompare(); if (tab === "journal") renderTab();
+    // Binance: refresh every minute (live result of an open trade); Twelve Data: just after each candle close (saves the daily quota)
+    var twelve = cfg.source === "twelve" && cfg.tdKey, nextAt = 0;
+    other.timer = setInterval(function () {
+      var now = Date.now(), barMs = otherSetup().barMin * 60000;
+      if (twelve) { var due = Math.floor(now / barMs) * barMs + 40000; if (now < due || nextAt >= due) return; nextAt = due; }
+      otherFetch(false).then(function (ch) { if (ch) { computeOther(); if (tab === "journal") renderTab(); } renderCompare(); }).catch(function () {});
+    }, twelve ? 20000 : 60000);
+  }).catch(function (e) { other.err = e.message; renderCompare(); });
+}
+function sideStatus(res, bars, barMs, price) {
+  if (!res) return "<span class='muted'>loading…</span>";
+  var o = res.open;
+  if (!o) return "<span class='muted'>WAIT</span>";
+  var side = o.side > 0 ? "BUY" : "SELL", fresh = o.bar === bars.length - 1;
+  var live = price == null ? null : (price - o.entry) / Math.abs(o.entry - o.sl) * o.side;
+  return "<b class='" + (o.side > 0 ? "up" : "down") + "'>" + (fresh ? side + " NOW" : "IN " + side) + "</b>" + (live != null && !fresh ? " <span class='num " + (live >= 0 ? "up" : "down") + "'>" + fr(live) + "</span>" : "");
+}
+function sideRecord(res, barMs, tf) {
+  if (!res) return { all: null, demo: null, took: null };
+  var ns = res.signals.map(function (x) { return Object.assign({}, x, { result: net(x) }); });
+  var took = ns.filter(function (x) { var j = journal[jKey(tf, x)]; return j && j.a === "Took" && x.result != null; });
+  return { all: A.record(ns), demo: cfg.demoStart ? A.record(ns, function (x) { return x.t + barMs >= cfg.demoStart; }) : null,
+    took: { n: took.length, r: took.reduce(function (a, x) { return a + x.result; }, 0) } };
+}
+function renderCompare() {
+  var el = $("cmpRows"), sec = $("cmpTitle");
+  if (!el) return;
+  if (!cfg.compare || !result) { el.style.display = "none"; sec.style.display = "none"; return; }
+  el.style.display = ""; sec.style.display = "";
+  var main = { tf: cfg.sigTf, label: SETUP.label, res: result, bars: closed, barMs: BAR };
+  var oth = { tf: other.tf || otherTf(), label: A.SETUPS[other.tf || otherTf()].label, res: other.result, bars: other.closed, barMs: A.SETUPS[other.tf || otherTf()].barMin * 60000 };
+  var cols = main.tf === "60" ? [main, oth] : [oth, main];
+  var price = lastPrice;
+  var recs = cols.map(function (c) { return sideRecord(c.res, c.barMs, c.tf); });
+  function cell(i, html) { return "<td class='num'>" + html + "</td>"; }
+  var h = "<table class='cmp'><tr><th></th>" + cols.map(function (c) { return "<th>" + c.label + (c.tf === cfg.sigTf ? " <span class='muted'>(chart)</span>" : "") + "</th>"; }).join("") + "</tr>";
+  h += "<tr><td>Now</td>" + cols.map(function (c) { return "<td>" + sideStatus(c.res, c.bars, c.barMs, price) + "</td>"; }).join("") + "</tr>";
+  if (cfg.demoStart) {
+    h += "<tr><td>Demo</td>" + recs.map(function (r) { var d = r.demo; return cell(0, d ? "<span class='prog' style='width:46px'><i style='width:" + Math.min(100, d.n * 5) + "%'></i></span>" + d.n + "/20" : "…"); }).join("") + "</tr>";
+    h += "<tr><td>Demo result</td>" + recs.map(function (r) { var d = r.demo; return cell(0, d && d.n ? "<span class='" + (d.total >= 0 ? "up" : "down") + "'>" + fr(d.total) + "</span> · " + d.winPct.toFixed(0) + "%" : "–"); }).join("") + "</tr>";
+  }
+  h += "<tr><td>You took</td>" + recs.map(function (r) { var t = r.took; return cell(0, t && t.n ? t.n + " · <span class='" + (t.r >= 0 ? "up" : "down") + "'>" + fr(t.r) + "</span>" : "–"); }).join("") + "</tr>";
+  h += "<tr><td>History</td>" + recs.map(function (r) { var a = r.all; return cell(0, a ? a.n + " · " + a.winPct.toFixed(0) + "% · PF " + (isFinite(a.pf) ? a.pf.toFixed(2) : "∞") : "…"); }).join("") + "</tr>";
+  h += "</table>";
+  if (other.err) h += "<p class='note warn'>" + oth.label + " prices failed: " + esc(other.err) + "</p>";
+  h += "<p class='note' style='margin:6px 0 4px'>" + (cfg.demoStart ? "Demo = signals since " + new Date(cfg.demoStart).toLocaleDateString(undefined, { day: "numeric", month: "short" }) + ", after spread. Compare after 20 trades each. " : "Start the demo in the Journal tab to count both from the same day. ") +
+    "<a href='#' id='cmpSwitch'>Show " + oth.label + " on the chart</a></p>";
+  el.innerHTML = h;
+  $("cmpSwitch").onclick = function (e) { e.preventDefault(); switchSig(oth.tf); };
+}
+function switchSig(tf) {
+  cfg.sigTf = tf; applySetup();
+  Object.keys(SETUP.settings).forEach(function (x) { cfg[x] = SETUP.settings[x]; });
+  save(); fetched = {}; result = null; setTf(cfg.sigTf); start(); renderTab();
+  toast("Signals now on " + SETUP.label + " with its tested settings");
+}
+
 function start() {
   $("loading").style.display = "flex";
   $("loading").textContent = "Loading gold prices…";
@@ -510,7 +648,7 @@ function start() {
   var p = cfg.source === "twelve" && cfg.tdKey ? loadTwelve() : loadPaxg();
   p.then(function () {
     $("loading").style.display = "none";
-    compute(); booted = true; view.offset = 0; tick(); renderTab();
+    compute(); booted = true; view.offset = 0; tick(); renderTab(); startOther();
   }).catch(function (e) {
     setLive("bad", "no data");
     $("loading").innerHTML = "Could not load prices.<br><span class='num'>" + esc(e.message) + "</span><br><br>" +
@@ -738,6 +876,7 @@ function renderPanel() {
   if (blocked) r += row("BLOCKED BY", blocked, "muted");
   r += row("HISTORY", fdt(closed[0].t) + " → now <span class='muted'>(" + closed.length + " candles)</span>", "muted");
   $("recRows").innerHTML = r;
+  renderCompare();
 }
 
 // ---------------- tabs ----------------
@@ -762,14 +901,24 @@ function inp(name, label, step, allowZero) {
 function chk(name, label) {
   return '<label class="f">' + label + '<input type="checkbox" data-k="' + name + '"' + (cfg[name] ? " checked" : "") + "></label>";
 }
-function sigKey(s) { return (cfg.sigTf === "60" ? "" : cfg.sigTf + ":") + s.t; }
+function jKey(tf, s) { return (tf === "60" ? "" : tf + ":") + s.t; }
+function sigKey(s) { return jKey(cfg.sigTf, s); }
+// signals of the chart timeframe and (side by side) of the other one, newest first
+function journalList() {
+  var list = result ? result.signals.map(function (x) { return { s: x, tf: cfg.sigTf, label: SETUP.label, barMs: BAR }; }) : [];
+  if (cfg.compare && other.result) {
+    var su = otherSetup();
+    other.result.signals.forEach(function (x) { list.push({ s: x, tf: other.tf, label: su.label, barMs: su.barMin * 60000 }); });
+  }
+  return list.sort(function (a, b) { return (b.s.t + b.barMs) - (a.s.t + a.barMs); });
+}
 function csvCell(v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 function exportCSV() {
-  var head = ["Signal time", "Side", "Grade", "Quality", "Entry", "SL", "TP", "RR", "Lot", "Result R (after spread)", "Exit", "My action", "Note"];
+  var head = ["Signal time", "TF", "Side", "Grade", "Quality", "Entry", "SL", "TP", "RR", "Lot", "Result R (after spread)", "Exit", "My action", "Note"];
   var lines = [head.join(",")];
-  result.signals.forEach(function (s) {
-    var j = journal[sigKey(s)] || {}, li = lotInfo(s);
-    lines.push([new Date(s.t + BAR).toISOString().replace("T", " ").slice(0, 16) + " UTC", s.side > 0 ? "BUY" : "SELL", s.grade, s.quality,
+  journalList().reverse().forEach(function (it) {
+    var s = it.s, j = journal[jKey(it.tf, s)] || {}, li = lotInfo(s);
+    lines.push([new Date(s.t + it.barMs).toISOString().replace("T", " ").slice(0, 16) + " UTC", it.label, s.side > 0 ? "BUY" : "SELL", s.grade, s.quality,
       f2(s.entry), f2(s.sl), f2(s.tp), s.rr.toFixed(2), li.lot.toFixed(2), s.result == null ? "open" : net(s).toFixed(2), s.how || "",
       j.a || "", j.n || ""].map(csvCell).join(","));
   });
@@ -797,20 +946,21 @@ function renderTab() {
       tr.onclick = function () { focusBar(+tr.getAttribute("data-bar")); };
     });
   } else if (tab === "journal") {
-    if (!result || !result.signals.length) { el.innerHTML = "<p class='note'>No signals yet.</p>"; return; }
-    var took = result.signals.filter(function (s) { var j = journal[sigKey(s)]; return j && j.a === "Took" && s.result != null; });
-    var tr = took.reduce(function (a, s) { return a + net(s); }, 0);
+    if (!result) { el.innerHTML = "<p class='note'>Loading…</p>"; return; }
+    var jl = journalList();
+    var took = jl.filter(function (it) { var j = journal[jKey(it.tf, it.s)]; return j && j.a === "Took" && it.s.result != null; });
+    var tr = took.reduce(function (a, it) { return a + net(it.s); }, 0);
     h += "<p class='note'>Mark every signal you took or skipped on your demo account (the demo plan needs 20 trades). Saved in this browser.</p>";
     h += '<label class="f">Demo started on<input type="date" id="demoDate" value="' + (cfg.demoStart ? new Date(cfg.demoStart - new Date(cfg.demoStart).getTimezoneOffset() * 60000).toISOString().slice(0, 10) : "") + '"></label>';
-    h += "<p class='note' style='margin-top:0'>" + (cfg.demoStart ? "The Record shows your progress to 20 trades since this date." : "<button class='btn' id='demoToday'>Start my demo today</button> — then the Record counts signals from today.") + "</p>";
+    h += "<p class='note' style='margin-top:0'>" + (cfg.demoStart ? "The Record and the Side by side card show your progress to 20 trades since this date." : "<button class='btn' id='demoToday'>Start my demo today</button> — then the Record counts signals from today.") + "</p>";
     h += row("YOUR TRADES", took.length ? "<span class='num'>" + took.length + "</span> closed · <span class='num " + (tr >= 0 ? "up" : "down") + "'>" + fr(tr) + "</span>" : "none marked yet");
-    h += "<table style='margin-top:6px'><tr><th>Signal</th><th>Side</th><th>Result</th><th>Me</th></tr>";
-    result.signals.slice().reverse().slice(0, 40).forEach(function (s) {
-      var j = journal[sigKey(s)] || {}, r = net(s);
-      h += "<tr><td>" + fdt(s.t + BAR) + " <span class='" + gradeCls(s.grade) + "'>" + s.grade + "</span></td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") + "</td><td class='num " +
-        (r == null ? "muted" : r >= 0 ? "up" : "down") + "'>" + (r == null ? "open" : fr(r)) + "</td><td><select class='jsel' data-j='" + sigKey(s) + "'>" +
+    h += "<table style='margin-top:6px'><tr><th>Signal</th><th>TF</th><th>Side</th><th>Result</th><th>Me</th></tr>";
+    jl.slice(0, 50).forEach(function (it) {
+      var s = it.s, k = jKey(it.tf, s), j = journal[k] || {}, r = net(s);
+      h += "<tr><td>" + fdt(s.t + it.barMs) + " <span class='" + gradeCls(s.grade) + "'>" + s.grade + "</span></td><td class='muted'>" + it.label + "</td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") + "</td><td class='num " +
+        (r == null ? "muted" : r >= 0 ? "up" : "down") + "'>" + (r == null ? "open" : fr(r)) + "</td><td><select class='jsel' data-j='" + k + "'>" +
         ["", "Took", "Skipped"].map(function (o) { return "<option" + (j.a === o ? " selected" : "") + " value='" + o + "'>" + (o || "—") + "</option>"; }).join("") +
-        "</select></td></tr><tr><td colspan='4' style='padding-top:0'><input class='jnote' placeholder='note (entry price, why, feelings…)' data-n='" + sigKey(s) + "' value='" + esc(j.n || "") + "'></td></tr>";
+        "</select></td></tr><tr><td colspan='5' style='padding-top:0'><input class='jnote' placeholder='note (entry price, why, feelings…)' data-n='" + k + "' value='" + esc(j.n || "") + "'></td></tr>";
     });
     h += "</table><p class='note'><button class='btn primary' id='csvBtn'>⬇ Export to Excel (CSV)</button></p>";
     el.innerHTML = h;
@@ -854,6 +1004,7 @@ function renderTab() {
     h += inp("spread", "Spread for the record ($)", "0.05", true);
     h += "<div class='sec' style='padding-left:0'>Signals</div>";
     h += sel("sigTf", "Signal timeframe", [["60", "1H (main, tested)"], ["30", "30m (tested, New York only)"]]);
+    h += chk("compare", "Also watch the other timeframe (side by side)");
     h += "<p class='note' style='margin-top:0'>" + (cfg.sigTf === "30" ? "30m: trend from 1H, new trades only in the New York session. More trades, found after more testing (a bit more chance it was luck)." :
       "1H: trend from 4H, all day. The main tested setup.") + "</p>";
     h += sel("mode", "Signal mode", ["Balanced", "Strict", "Aggressive"]);
@@ -885,13 +1036,8 @@ function renderTab() {
         }
         if (c.type === "number" && !(v > 0 || (c.getAttribute("data-zero") && v === 0))) { c.value = cfg[k]; return; }
         cfg[k] = v; save();
-        if (k === "sigTf") {
-          applySetup();
-          Object.keys(SETUP.settings).forEach(function (x) { cfg[x] = SETUP.settings[x]; });
-          save(); fetched = {}; result = null; setTf(cfg.sigTf); start(); renderTab();
-          toast("Signals now on " + SETUP.label + " with its tested settings");
-          return;
-        }
+        if (k === "sigTf") { switchSig(v); return; }
+        if (k === "compare") { save(); startOther(); renderCompare(); if (tab === "journal") renderTab(); return; }
         if (k === "source" || k === "tdKey") { if (cfg.source === "twelve" && !cfg.tdKey) { renderTab(); return; } start(); renderTab(); return; }
         if (["mode", "swing", "sessions", "minRR", "slBuffer"].indexOf(k) >= 0) compute();
         tick();
@@ -1376,7 +1522,8 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 var installEvt = null;
 window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); installEvt = e; $("installBtn").style.display = "inline-block"; });
 $("installBtn").onclick = function () { if (installEvt) { installEvt.prompt(); installEvt = null; $("installBtn").style.display = "none"; } };
-window.__aurum = { get result() { return result; }, get closed() { return closed; }, get forming() { return forming; }, cfg: cfg, view: view };
+window.__aurum = { get result() { return result; }, get closed() { return closed; }, get forming() { return forming; }, get other() { return other; }, cfg: cfg, view: view,
+  refreshOther: function () { return otherFetch(false).then(function (ch) { if (ch) computeOther(); renderCompare(); return ch; }); } };
 })();
 </script>
 </body>
