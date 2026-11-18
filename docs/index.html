@@ -185,14 +185,23 @@ a{color:var(--accent2)}
 var A = window.Aurum;
 var $ = function (id) { return document.getElementById(id); };
 var H = 3600000;
+var SETUP = null, BAR = H;           // signal timeframe (1H or 30m), set from cfg.sigTf below
 
 // ---------------- settings ----------------
 var SKEY = "aurum.web.settings.v1";
 var cfg = Object.assign({}, A.DEFAULTS, { source: "paxg", tdKey: "", showAll: false, showPast: true, alerts: false, theme: "",
-  spread: 0.30, brokerOff: 0, brokerAt: 0, showEMA: true, showSess: true, viewTf: "60", showNews: true, maxLosses: 2, demoStart: 0 });
+  spread: 0.30, brokerOff: 0, brokerAt: 0, showEMA: true, showSess: true, viewTf: "60", showNews: true, maxLosses: 2, demoStart: 0, sigTf: "60" });
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(SKEY) || "{}")); } catch (e) {}
 function save() { try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch (e) {} }
 if (cfg.theme) document.documentElement.setAttribute("data-theme", cfg.theme);
+function applySetup() {
+  if (!A.SETUPS[cfg.sigTf]) cfg.sigTf = "60";
+  SETUP = A.SETUPS[cfg.sigTf]; BAR = SETUP.barMin * 60000;
+}
+applySetup();
+function binIv() { return SETUP.barMin === 30 ? "30m" : "1h"; }
+function tdIv() { return SETUP.barMin === 30 ? "30min" : "1h"; }
+function symLabel(src) { return src + " · " + SETUP.label + " signals"; }
 
 // ---------------- state ----------------
 var closed = [];        // closed 1H candles while the gold market is open
@@ -263,7 +272,7 @@ setInterval(loadNews, 6 * 36e5);
 // ---------------- engine ----------------
 function compute() {
   if (closed.length < 60) return;
-  var t = A.trend4H(closed, 60);
+  var t = A.trendHTF(closed, SETUP.barMin, SETUP.htfMin);
   trend = t;
   sessL = closed.map(function (b) { return A.inLondon(b.t); });
   sessN = closed.map(function (b) { return A.inNewYork(b.t); });
@@ -291,7 +300,7 @@ function computePreview() {
   previewAt = now;
   preview = null;
   var bars = closed.concat([forming]);
-  var t = A.trend4H(bars, 60).dir;
+  var t = A.trendHTF(bars, SETUP.barMin, SETUP.htfMin).dir;
   var allowed = cfg.sessions === "All day" ? null : bars.map(function (b) {
     var l = A.inLondon(b.t), n = A.inNewYork(b.t);
     return cfg.sessions === "London only" ? l : cfg.sessions === "New York only" ? n : l || n;
@@ -321,7 +330,7 @@ function notify(s) {
   flashTitle(side + " NOW");
   if (!cfg.alerts) return;
   beep();
-  try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum " + side + " gold 1H", { body: body }); } catch (e) {}
+  try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum " + side + " gold " + SETUP.label, { body: body }); } catch (e) {}
 }
 function notifyClose(s) {
   var key = "aurum.web.lastClose";
@@ -371,7 +380,7 @@ function mergeBar(b) {      // b = {t,o,h,l,c,final}
 function strip(b) { return { t: b.t, o: b.o, h: b.h, l: b.l, c: b.c }; }
 
 var BIN_REST = ["https://api.binance.com", "https://data-api.binance.vision"];
-var BIN_WS = ["wss://stream.binance.com:9443/ws/paxgusdt@kline_1h", "wss://data-stream.binance.vision/ws/paxgusdt@kline_1h"];
+function binWs(k) { return ["wss://stream.binance.com:9443/ws/paxgusdt@kline_", "wss://data-stream.binance.vision/ws/paxgusdt@kline_"][k % 2] + binIv(); }
 var restBase = null, ws = null, wsIdx = 0, wsRetry = 0, lastMsg = 0, pollTimer = null;
 
 function fetchJSON(url) {
@@ -394,10 +403,10 @@ function binKlines(endTime, limit, startTime, interval) {
 function binBar(k, now) { return { t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], final: +k[6] < now }; }
 
 function loadPaxg() {
-  $("sym").textContent = "PAXG/USDT · 1H";
+  $("sym").textContent = symLabel("PAXG/USDT");
   var pages = [], end = null, n = 0;
   function next() {
-    return binKlines(end, 1000).then(function (d) {
+    return binKlines(end, 1000, null, binIv()).then(function (d) {
       if (!d.length) return;
       pages.unshift(d); end = +d[0][0] - 1; n++;
       if (n < 4 && d.length === 1000) return next();
@@ -413,7 +422,7 @@ function loadPaxg() {
 function connectWs() {
   var myGen = gen;
   try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) {}
-  var url = BIN_WS[wsIdx % BIN_WS.length];
+  var url = binWs(wsIdx);
   ws = new WebSocket(url);
   ws.onopen = function () { wsRetry = 0; setLive("on", "live"); };
   ws.onmessage = function (ev) {
@@ -441,7 +450,7 @@ function refresh() {
   if (!closed.length) return;
   if (cfg.source === "twelve" && cfg.tdKey) return pollTwelve();
   var from = closed[closed.length - 1].t;
-  return binKlines(null, 1000, from).then(function (d) {
+  return binKlines(null, 1000, from, binIv()).then(function (d) {
     var now = Date.now(), changed = false;
     d.forEach(function (k) { changed = mergeBar(binBar(k, now)) || changed; });
     if (changed) compute();
@@ -471,10 +480,10 @@ function tdBars(d, minutes) {
   });
 }
 function loadTwelve() {
-  $("sym").textContent = "XAU/USD · 1H (Twelve Data)";
-  return fetchJSON(tdUrl(5000)).then(function (d) {
+  $("sym").textContent = symLabel("XAU/USD (Twelve Data)");
+  return fetchJSON(tdUrl(5000, tdIv())).then(function (d) {
     closed = []; forming = null;
-    tdBars(d).forEach(function (b) { mergeBar(b); });
+    tdBars(d, SETUP.barMin).forEach(function (b) { mergeBar(b); });
     setLive("on", "updates every 2 min");
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(pollTwelve, 120000);
@@ -482,10 +491,10 @@ function loadTwelve() {
 }
 function pollTwelve() {
   // ask for enough candles to cover any gap since the last closed one
-  var gap = closed.length ? Math.ceil((Date.now() - closed[closed.length - 1].t) / H) + 2 : 3;
-  return fetchJSON(tdUrl(Math.min(5000, Math.max(3, gap)))).then(function (d2) {
+  var gap = closed.length ? Math.ceil((Date.now() - closed[closed.length - 1].t) / BAR) + 2 : 3;
+  return fetchJSON(tdUrl(Math.min(5000, Math.max(3, gap)), tdIv())).then(function (d2) {
     var changed = false;
-    tdBars(d2).forEach(function (b) { changed = mergeBar(b) || changed; });
+    tdBars(d2, SETUP.barMin).forEach(function (b) { changed = mergeBar(b) || changed; });
     if (changed) compute();
     setLive("on", "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     tick();
@@ -559,7 +568,7 @@ function planRows(s, live) {
 }
 function planText(s) {
   var li = lotInfo(s);
-  return (s.side > 0 ? "BUY" : "SELL") + " XAUUSD (Aurum 1H) | Entry " + f2(s.entry) + " | SL " + f2(s.sl) + " | TP " + f2(s.tp) +
+  return (s.side > 0 ? "BUY" : "SELL") + " XAUUSD (Aurum " + SETUP.label + ") | Entry " + f2(s.entry) + " | SL " + f2(s.sl) + " | TP " + f2(s.tp) +
     " | Lot " + li.lot.toFixed(2) + " | RR 1:" + s.rr.toFixed(1) + " | Grade " + s.grade + " " + s.quality + "/100 | " + s.why;
 }
 function copyText(t) {
@@ -590,7 +599,7 @@ function todayStats() {      // trades closed today (your local day), after spre
   var w = 0, l = 0, r = 0;
   result.signals.forEach(function (s) {
     if (s.exitBar == null) return;
-    var t = closed[s.exitBar].t + H;
+    var t = closed[s.exitBar].t + BAR;
     if (t < d0.getTime()) return;
     var x = net(s); r += x; if (x > 0) w++; else l++;
   });
@@ -615,7 +624,7 @@ function renderPanel() {
   var open = result.open;
   var justNow = open && open.bar === closed.length - 1;
   var marketOpen = A.goldMarketOpen(nowMs);
-  var nextClose = (Math.floor(nowMs / H) + 1) * H;
+  var nextClose = (Math.floor(nowMs / BAR) + 1) * BAR;
   var mins = fdur(nextClose - nowMs);
   box.className = "status";
   var h = "", mst = ["WAIT", "wait"];
@@ -635,7 +644,7 @@ function renderPanel() {
     var side = open.side > 0 ? "BUY" : "SELL";
     box.classList.add(open.side > 0 ? "buy" : "sell");
     big.textContent = justNow ? side + " NOW" : "IN " + side;
-    sub.textContent = justNow ? "Signal on the candle that closed at " + fdt(closed[closed.length - 1].t + H) + ". Use the plan below." : "Trade open since " + fdt(open.t + H) + " · the stop and target are below";
+    sub.textContent = justNow ? "Signal on the candle that closed at " + fdt(closed[closed.length - 1].t + BAR) + ". Use the plan below." : "Trade open since " + fdt(open.t + BAR) + " · the stop and target are below";
     var live = (price - open.entry) / Math.abs(open.entry - open.sl) * open.side;
     h += planRows(open, justNow ? null : live);
     actionSig = open; mst = [big.textContent, open.side > 0 ? "buy" : "sell"];
@@ -674,9 +683,9 @@ function renderPanel() {
     h += row("NEXT", next);
     h += row("VOLATILITY", "<span class='num'>$" + atr.toFixed(2) + "</span> <span class='muted'>average 1H range (ATR)</span>");
     if (result.lastSkip && closed.length - 1 - result.lastSkip.bar < 24)
-      h += row("NOTE", (result.lastSkip.side > 0 ? "BUY" : "SELL") + " setup " + fdt(closed[result.lastSkip.bar].t + H) + " skipped: " + esc(result.lastSkip.why), "muted");
+      h += row("NOTE", (result.lastSkip.side > 0 ? "BUY" : "SELL") + " setup " + fdt(closed[result.lastSkip.bar].t + BAR) + " skipped: " + esc(result.lastSkip.why), "muted");
     if (lastSig && lastSig.result != null)
-      h += row("LAST TRADE", (lastSig.side > 0 ? "BUY " : "SELL ") + fdt(lastSig.t + H) + " → <span class='num " + (net(lastSig) >= 0 ? "up" : "down") + "'>" + fr(net(lastSig)) + "</span> <span class='muted'>(" + lastSig.how + ")</span>");
+      h += row("LAST TRADE", (lastSig.side > 0 ? "BUY " : "SELL ") + fdt(lastSig.t + BAR) + " → <span class='num " + (net(lastSig) >= 0 ? "up" : "down") + "'>" + fr(net(lastSig)) + "</span> <span class='muted'>(" + lastSig.how + ")</span>");
   }
   if (cfg.source === "paxg") {
     h += row("PRICES", off() ? "matched to your broker <span class='num'>(" + (off() >= 0 ? "+" : "−") + "$" + Math.abs(off()).toFixed(2) + " vs PAXG, set " + fdur(nowMs - (cfg.brokerAt || nowMs)) + " ago)</span>"
@@ -698,7 +707,7 @@ function renderPanel() {
 
   // record (after spread, like the backtest)
   var ns = netSignals(), rec = A.record(ns), r = "";
-  $("recTitle").textContent = "Record · after $" + (+cfg.spread || 0).toFixed(2) + " spread";
+  $("recTitle").textContent = "Record · " + SETUP.label + " signals · after $" + (+cfg.spread || 0).toFixed(2) + " spread";
   r += row("TRADES", rec.n ? "<span class='num'>" + rec.n + "</span> · win <span class='num'>" + rec.winPct.toFixed(0) + "%</span> · <span class='num " + (rec.total >= 0 ? "up" : "down") + "'>" + fr(rec.total) + "</span>" : "none yet");
   if (rec.n) {
     var eq = [0], acc = 0;
@@ -715,7 +724,7 @@ function renderPanel() {
     r += row("LAST 20", "<span class='last20'>" + done.map(function (s) { return "<span class='" + (s.result > 0 ? "w" : "l") + "' title='" + fr(s.result) + "'></span>"; }).join("") + "</span>");
   }
   if (cfg.demoStart) {
-    var dm = A.record(ns, function (s) { return s.t + H >= cfg.demoStart; });
+    var dm = A.record(ns, function (s) { return s.t + BAR >= cfg.demoStart; });
     var prog = Math.min(20, dm.n);
     r += row("DEMO SINCE " + new Date(cfg.demoStart).toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase(),
       "<span class='prog'><i style='width:" + (prog / 20 * 100) + "%'></i></span><span class='num'>" + dm.n + "/20</span>" +
@@ -753,14 +762,14 @@ function inp(name, label, step, allowZero) {
 function chk(name, label) {
   return '<label class="f">' + label + '<input type="checkbox" data-k="' + name + '"' + (cfg[name] ? " checked" : "") + "></label>";
 }
-function sigKey(s) { return String(s.t); }
+function sigKey(s) { return (cfg.sigTf === "60" ? "" : cfg.sigTf + ":") + s.t; }
 function csvCell(v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 function exportCSV() {
   var head = ["Signal time", "Side", "Grade", "Quality", "Entry", "SL", "TP", "RR", "Lot", "Result R (after spread)", "Exit", "My action", "Note"];
   var lines = [head.join(",")];
   result.signals.forEach(function (s) {
     var j = journal[sigKey(s)] || {}, li = lotInfo(s);
-    lines.push([new Date(s.t + H).toISOString().replace("T", " ").slice(0, 16) + " UTC", s.side > 0 ? "BUY" : "SELL", s.grade, s.quality,
+    lines.push([new Date(s.t + BAR).toISOString().replace("T", " ").slice(0, 16) + " UTC", s.side > 0 ? "BUY" : "SELL", s.grade, s.quality,
       f2(s.entry), f2(s.sl), f2(s.tp), s.rr.toFixed(2), li.lot.toFixed(2), s.result == null ? "open" : net(s).toFixed(2), s.how || "",
       j.a || "", j.n || ""].map(csvCell).join(","));
   });
@@ -778,7 +787,7 @@ function renderTab() {
     h = "<table><tr><th>Signal</th><th>Side</th><th>Gr.</th><th>Entry</th><th>Result</th></tr>";
     result.signals.slice().reverse().slice(0, 60).forEach(function (s) {
       var r = net(s);
-      h += "<tr data-bar='" + s.bar + "' style='cursor:pointer'><td>" + fdt(s.t + H) + "</td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") +
+      h += "<tr data-bar='" + s.bar + "' style='cursor:pointer'><td>" + fdt(s.t + BAR) + "</td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") +
         "</td><td class='" + gradeCls(s.grade) + "'>" + s.grade + "</td><td class='num'>" + fp(s.entry) + "</td><td class='num " +
         (r == null ? "muted" : r >= 0 ? "up" : "down") + "'>" + (r == null ? "open" : fr(r)) + "</td></tr>";
     });
@@ -798,7 +807,7 @@ function renderTab() {
     h += "<table style='margin-top:6px'><tr><th>Signal</th><th>Side</th><th>Result</th><th>Me</th></tr>";
     result.signals.slice().reverse().slice(0, 40).forEach(function (s) {
       var j = journal[sigKey(s)] || {}, r = net(s);
-      h += "<tr><td>" + fdt(s.t + H) + " <span class='" + gradeCls(s.grade) + "'>" + s.grade + "</span></td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") + "</td><td class='num " +
+      h += "<tr><td>" + fdt(s.t + BAR) + " <span class='" + gradeCls(s.grade) + "'>" + s.grade + "</span></td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") + "</td><td class='num " +
         (r == null ? "muted" : r >= 0 ? "up" : "down") + "'>" + (r == null ? "open" : fr(r)) + "</td><td><select class='jsel' data-j='" + sigKey(s) + "'>" +
         ["", "Took", "Skipped"].map(function (o) { return "<option" + (j.a === o ? " selected" : "") + " value='" + o + "'>" + (o || "—") + "</option>"; }).join("") +
         "</select></td></tr><tr><td colspan='4' style='padding-top:0'><input class='jnote' placeholder='note (entry price, why, feelings…)' data-n='" + sigKey(s) + "' value='" + esc(j.n || "") + "'></td></tr>";
@@ -844,6 +853,9 @@ function renderTab() {
     }
     h += inp("spread", "Spread for the record ($)", "0.05", true);
     h += "<div class='sec' style='padding-left:0'>Signals</div>";
+    h += sel("sigTf", "Signal timeframe", [["60", "1H (main, tested)"], ["30", "30m (tested, New York only)"]]);
+    h += "<p class='note' style='margin-top:0'>" + (cfg.sigTf === "30" ? "30m: trend from 1H, new trades only in the New York session. More trades, found after more testing (a bit more chance it was luck)." :
+      "1H: trend from 4H, all day. The main tested setup.") + "</p>";
     h += sel("mode", "Signal mode", ["Balanced", "Strict", "Aggressive"]);
     h += sel("swing", "Swing size", ["Large", "Normal", "Small"]);
     h += sel("sessions", "Sessions (new trades)", ["All day", "London + New York", "London only", "New York only"]);
@@ -859,7 +871,7 @@ function renderTab() {
     h += chk("showEMA", "Show 4H EMA200 (trend line)");
     h += chk("showSess", "Show London / New York sessions");
     h += chk("showNews", "Show big USD news on the chart");
-    h += "<p class='note'>Tested defaults: Balanced · Large · All day · reward 1.2 · buffer 0.5 (see BACKTEST-RESULTS.md). <button class='btn' id='resetBtn'>Reset to tested defaults</button></p>";
+    h += "<p class='note'>Tested settings for " + SETUP.label + ": Balanced · Large · " + SETUP.settings.sessions + " · reward 1.2 · buffer 0.5 (see BACKTEST-RESULTS.md). <button class='btn' id='resetBtn'>Reset to tested settings</button></p>";
     el.innerHTML = h;
     el.querySelectorAll("[data-k]").forEach(function (c) {
       c.onchange = function () {
@@ -873,6 +885,13 @@ function renderTab() {
         }
         if (c.type === "number" && !(v > 0 || (c.getAttribute("data-zero") && v === 0))) { c.value = cfg[k]; return; }
         cfg[k] = v; save();
+        if (k === "sigTf") {
+          applySetup();
+          Object.keys(SETUP.settings).forEach(function (x) { cfg[x] = SETUP.settings[x]; });
+          save(); fetched = {}; result = null; setTf(cfg.sigTf); start(); renderTab();
+          toast("Signals now on " + SETUP.label + " with its tested settings");
+          return;
+        }
         if (k === "source" || k === "tdKey") { if (cfg.source === "twelve" && !cfg.tdKey) { renderTab(); return; } start(); renderTab(); return; }
         if (["mode", "swing", "sessions", "minRR", "slBuffer"].indexOf(k) >= 0) compute();
         tick();
@@ -880,7 +899,7 @@ function renderTab() {
     });
     var co = $("clearOff"); if (co) co.onclick = function () { cfg.brokerOff = 0; cfg.brokerAt = 0; save(); tick(); renderTab(); };
     $("resetBtn").onclick = function () {
-      ["mode", "swing", "sessions", "minRR", "slBuffer"].forEach(function (k) { cfg[k] = A.DEFAULTS[k]; });
+      Object.keys(SETUP.settings).forEach(function (k) { cfg[k] = SETUP.settings[k]; });
       save(); compute(); tick(); renderTab();
     };
   } else {
@@ -927,30 +946,30 @@ if (!TF[cfg.viewTf]) cfg.viewTf = "60";
 var fetched = {}, fetchTimer = null;      // candles loaded for the 1m / 15m / 30m views
 function store(tf) { return fetched[tf] || (fetched[tf] = { closed: [], forming: null, loaded: false }); }
 var aggCache = { key: null, bars: null };
-function is1H() { return cfg.viewTf === "60"; }
+function is1H() { return cfg.viewTf === cfg.sigTf; }     // the signal timeframe view (signals, trades, areas)
 function aggregate(bars, tf) {
   // 4H: broker clock (4H boundaries at 17:00, 21:00 ... New York); 1D: gold day starting 17:00 New York
   var out = [], cur = null;
   for (var i = 0; i < bars.length; i++) {
     var b = bars[i], p = A.localParts(b.t, "America/New_York");
-    var hrsIntoBlock = tf === 240 ? (p.h + 7) % 4 : (p.h + 7) % 24;
-    var key = b.t - hrsIntoBlock * H - p.mi * 60000;
+    var serverMin = ((p.h + 7) % 24) * 60 + p.mi;      // broker clock = New York + 7 h
+    var key = b.t - (serverMin % tf) * 60000;
     if (!cur || cur.t !== key) { cur = { t: key, o: b.o, h: b.h, l: b.l, c: b.c }; out.push(cur); }
     else { cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; }
   }
   return out;
 }
 function chartBars() {
-  if (FETCHED[cfg.viewTf]) { var st = store(cfg.viewTf); return st.forming ? st.closed.concat([st.forming]) : st.closed; }
   if (is1H()) return allBars();
+  if (FETCHED[cfg.viewTf]) { var st = store(cfg.viewTf); return st.forming ? st.closed.concat([st.forming]) : st.closed; }
   var src = allBars(), last = src[src.length - 1];
   var key = cfg.viewTf + ":" + src.length + ":" + (last ? last.c : 0);
   if (aggCache.key !== key) { aggCache.key = key; aggCache.bars = aggregate(src, TF[cfg.viewTf]); }
   return aggCache.bars;
 }
 function chartHasForming() {
-  if (FETCHED[cfg.viewTf]) return !!store(cfg.viewTf).forming;
   if (is1H()) return !!forming;
+  if (FETCHED[cfg.viewTf]) return !!store(cfg.viewTf).forming;
   var b = chartBars(); return b.length && b[b.length - 1].t + TF[cfg.viewTf] * 60000 > Date.now();
 }
 function mergeFetched(st, b) {
@@ -983,12 +1002,12 @@ function setTf(tf) {
   view.offset = 0; view.spacing = 9;
   document.querySelectorAll("#tfBar [data-tf]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-tf") === tf); });
   clearInterval(fetchTimer); fetchTimer = null;
-  if (FETCHED[tf]) {
+  if (FETCHED[tf] && tf !== cfg.sigTf) {
     loadFetched(tf);
     // Twelve Data's free plan allows ~800 requests a day, so the small timeframes refresh slowly with it
     fetchTimer = setInterval(function () { loadFetched(tf); }, cfg.source === "twelve" && cfg.tdKey ? 180000 : FETCHED[tf].poll);
   }
-  $("tfNote").textContent = tf === "1" || tf === "15" || tf === "30" ? "View only · signals come from 1H (not tested for scalping)" : "View only · signals come from 1H";
+  $("tfNote").textContent = "View only · signals come from " + SETUP.label + (TF[tf] < SETUP.barMin ? " (not tested for scalping)" : "");
   $("tfNote").style.display = is1H() ? "none" : "block";
   dirty();
 }
@@ -1199,6 +1218,7 @@ function draw() {
   var emaVals = null, emaLabel = "";
   if (cfg.showEMA && trend) {
     if (is1H()) { emaVals = trend.ema; emaLabel = trend.source[trend.source.length - 1] + " EMA200"; }
+    else if (cfg.viewTf === "60" && SETUP.htfMin === 60) { emaVals = emaSeries(bars, 200); emaLabel = "1H EMA200"; }
     else if (cfg.viewTf === "240") { emaVals = emaSeries(bars, 200); emaLabel = "4H EMA200"; }
   }
   if (emaVals) {
@@ -1284,7 +1304,7 @@ function clampView() {
   view.offset = Math.min(Math.max(-PADR + 2, view.offset), Math.max(0, n - 20));
 }
 function focusBar(i) {
-  if (!is1H()) setTf("60");
+  if (!is1H()) setTf(cfg.sigTf);
   var n = chartBars().length, visible = (W - AX) / view.spacing;
   view.offset = Math.max(0, n - 1 - i + PADR - visible / 2); clampView(); dirty();
 }
@@ -1340,7 +1360,7 @@ function renderHeader() {
 function renderClock() {
   var now = Date.now(), el = $("clock");
   if (!A.goldMarketOpen(now)) { var ro = nextMarketOpen(now); el.innerHTML = "market closed" + (ro ? " · opens in <b>" + fdur(ro - now) + "</b>" : ""); return; }
-  var left = Math.max(0, (Math.floor(now / H) + 1) * H - now), m = Math.floor(left / 60000), sec = Math.floor(left / 1000) % 60;
+  var left = Math.max(0, (Math.floor(now / BAR) + 1) * BAR - now), m = Math.floor(left / 60000), sec = Math.floor(left / 1000) % 60;
   el.innerHTML = "candle closes in <b>" + m + ":" + String(sec).padStart(2, "0") + "</b>";
 }
 setInterval(renderClock, 1000);

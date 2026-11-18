@@ -378,7 +378,9 @@ void RenderPanel()
    string rows[16]; color cols[16];
    for(int i=0;i<16;i++) { rows[i]=""; cols[i]=clrWhiteSmoke; }
 
-   rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF)+(_Period==PERIOD_H1?"":"   (tested on H1)"); cols[0]=_Period==PERIOD_H1?clrGold:clrOrange;
+   // Tested setups: H1 (trend H4, all day) or M30 (trend H1, New York only). See BACKTEST-RESULTS.md.
+   bool testedSetup=_Period==PERIOD_H1 || (_Period==PERIOD_M30 && trendTF==PERIOD_H1 && Sessions==SESSIONS_NEWYORK);
+   rows[0]="AURUM GOLD  "+_Symbol+" "+TFText(_Period)+"  trend "+TFText(trendTF)+(testedSetup?"":"   (tested: H1, or M30+H1 trend+NY)"); cols[0]=testedSetup?clrGold:clrOrange;
    rows[1]="TREND        "+(trendNow>0?"UP   only BUY":trendNow<0?"DOWN   only SELL":"FLAT   no trades");
    cols[1]=trendNow>0?clrMediumSeaGreen:trendNow<0?clrTomato:clrSilver;
    string nowName=londonNow && newYorkNow?"London + New York":londonNow?"London":newYorkNow?"New York":"Asia / off-hours";

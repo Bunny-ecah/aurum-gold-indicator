@@ -618,8 +618,9 @@ if barstate.islast and panelSize != "Hidden"
     color fg = chart.fg_color
     bool full = panelSize == "Full"
     table.cell(panel, 0, 0, "AURUM GOLD", text_color=color.orange, text_size=size.small, text_halign=text.align_left)
-    bool testedTF = tfSec == 3600
-    table.cell(panel, 1, 0, syminfo.ticker + " " + f_tf(timeframe.period) + " · trend " + f_tf(htf) + (testedTF ? "" : "  ⚠ tested on 1H"), text_color=testedTF ? fg : color.orange, text_size=size.small, text_halign=text.align_left)
+    // Tested setups: 1H (trend 4H, all day) or 30m (trend 1H, New York only). See BACKTEST-RESULTS.md.
+    bool testedTF = tfSec == 3600 or (tfSec == 1800 and htf == "60" and sessionInput == "New York only")
+    table.cell(panel, 1, 0, syminfo.ticker + " " + f_tf(timeframe.period) + " · trend " + f_tf(htf) + (testedTF ? "" : "  ⚠ tested: 1H, or 30m+1H trend+NY"), text_color=testedTF ? fg : color.orange, text_size=size.small, text_halign=text.align_left)
     f_row(1, "TREND", trendDir > 0 ? "UP ▲  only BUY" : trendDir < 0 ? "DOWN ▼  only SELL" : "FLAT  no trades", trendDir > 0 ? BUY_COLOR : trendDir < 0 ? SELL_COLOR : color.gray)
     string nowSession = inLondon and inNewYork ? "London + New York" : inLondon ? "London" : inNewYork ? "New York" : "Asia / closed"
     f_row(2, "SESSION", nowSession + (not sessionFilterOn ? "  (filter off)" : sessionOK ? "  ✓" : "  ✗ no new trades"), not sessionFilterOn ? fg : sessionOK ? BUY_COLOR : color.orange)

@@ -1,0 +1,25 @@
+; Aurum tested 30m setup (10-year test on real XAUUSD). Attach on M30. Trend H1, New York session only.
+SignalMode=0
+Sessions=2
+SwingSize=10
+TrendTimeframe=16385
+RiskPercent=1.0
+MinReward=1.2
+ShowAll=false
+ShowHistory=true
+PopupAlerts=true
+PushNotifications=false
+SoundAlerts=false
+MaxSpreadPrice=0.50
+ImpulseATR=1.5
+SLBufferATR=0.5
+MinRiskATR=0.5
+MaxItems=4
+ATRPeriod=14
+MaxTradeBars=100
+HistoryBars=3000
+ServerUTCOffset=99
+ServerFollowsUSDST=true
+PanelX=12
+PanelY=24
+PanelFontSize=10

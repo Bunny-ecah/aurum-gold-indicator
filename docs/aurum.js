@@ -103,34 +103,38 @@
     return p.h !== 17;
   }
 
-  // 4H candles on the broker clock used in the backtest (server = New York + 7 h): 4H boundaries
-  // fall at 17:00, 21:00, 01:00 ... New York time.
-  function build4H(bars) {
-    var out = [], cur = null;
+  // Higher-timeframe candles on the broker clock used in the backtest (server = New York + 7 h):
+  // 4H boundaries fall at 17:00, 21:00, 01:00 ... New York time; 1H candles on the hour.
+  function buildHTF(bars, htfMin, barMin) {
+    var out = [], cur = null, barMs = (barMin || 60) * 60000;
     for (var i = 0; i < bars.length; i++) {
       var b = bars[i], p = localParts(b.t, "America/New_York");
-      var serverHour = (p.h + 7) % 24;
-      var key = Math.floor((b.t - (serverHour % 4) * 3600000 - p.mi * 60000) / 60000);
-      if (!cur || cur.key !== key) {
-        cur = { key: key, t: key * 60000, o: b.o, h: b.h, l: b.l, c: b.c, end: b.t + 3600000 };
+      var serverMin = ((p.h + 7) % 24) * 60 + p.mi;
+      var key = b.t - (serverMin % htfMin) * 60000;
+      if (!cur || cur.t !== key) {
+        cur = { t: key, o: b.o, h: b.h, l: b.l, c: b.c };
         out.push(cur);
       } else {
-        cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; cur.end = b.t + 3600000;
+        cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c;
       }
     }
-    for (var j = 0; j < out.length; j++) out[j].end = out[j].t + 4 * 3600000;
+    for (var j = 0; j < out.length; j++) out[j].end = out[j].t + htfMin * 60000;
     return out;
   }
+  function build4H(bars) { return buildHTF(bars, 240, 60); }
+  function tfLabel(m) { return m >= 1440 ? "1D" : m >= 60 ? (m / 60) + "H" : m + "m"; }
 
-  // Trend per chart candle: last COMPLETED 4H candle at the chart candle's close -> sign(close - EMA200).
-  // Until 210 4H candles exist, the chart's own EMA200 is used (as the TradingView script does).
-  function trend4H(bars, barMinutes) {
-    barMinutes = barMinutes || 60;
-    var h4 = build4H(bars), k = 2 / 201, ema = null, closes = [];
-    for (var i = 0; i < h4.length; i++) {
-      ema = ema === null ? h4[i].c : ema + (h4[i].c - ema) * k;
-      closes.push({ end: h4[i].end, c: h4[i].c, e: ema, n: i });
+  // Trend per chart candle: last COMPLETED higher-timeframe candle at the chart candle's close -> sign(close - EMA200).
+  // Until 210 higher-timeframe candles exist, the chart's own EMA200 is used (as the TradingView script does).
+  // 1H signals use the 4H trend; 30m signals use the 1H trend (the tested setups).
+  function trendHTF(bars, barMinutes, htfMinutes) {
+    barMinutes = barMinutes || 60; htfMinutes = htfMinutes || 240;
+    var hb = buildHTF(bars, htfMinutes, barMinutes), k = 2 / 201, ema = null, closes = [];
+    for (var i = 0; i < hb.length; i++) {
+      ema = ema === null ? hb[i].c : ema + (hb[i].c - ema) * k;
+      closes.push({ end: hb[i].end, c: hb[i].c, e: ema, n: i });
     }
+    var hl = tfLabel(htfMinutes), cl = tfLabel(barMinutes);
     var out = [], src = [], ema4 = [], j = -1, cur = null, curE = null, e1 = null;
     for (var n = 0; n < bars.length; n++) {
       var b = bars[n];
@@ -141,11 +145,18 @@
         cur = closes[j].n >= 210 ? (closes[j].c > closes[j].e ? 1 : closes[j].c < closes[j].e ? -1 : 0) : null;
         curE = closes[j].n >= 210 ? closes[j].e : null;
       }
-      if (cur !== null) { out.push(cur); src.push("4H"); ema4.push(curE); }
-      else { out.push(n >= 200 ? (b.c > e1 ? 1 : b.c < e1 ? -1 : 0) : 0); src.push("1H"); ema4.push(n >= 200 ? e1 : null); }
+      if (cur !== null) { out.push(cur); src.push(hl); ema4.push(curE); }
+      else { out.push(n >= 200 ? (b.c > e1 ? 1 : b.c < e1 ? -1 : 0) : 0); src.push(cl); ema4.push(n >= 200 ? e1 : null); }
     }
     return { dir: out, source: src, ema: ema4 };
   }
+  function trend4H(bars, barMinutes) { return trendHTF(bars, barMinutes || 60, 240); }
+
+  // The two tested setups (BACKTEST-RESULTS.md)
+  var SETUPS = {
+    "60": { label: "1H", barMin: 60, htfMin: 240, settings: { mode: "Balanced", swing: "Large", sessions: "All day", minRR: 1.2, slBuffer: 0.5 } },
+    "30": { label: "30m", barMin: 30, htfMin: 60, settings: { mode: "Balanced", swing: "Large", sessions: "New York only", minRR: 1.2, slBuffer: 0.5 } }
+  };
 
   /* run(bars, trend, settings, opts)
    * bars: [{t, o, h, l, c}] closed candles; trend: [1/-1/0]; opts.allowed: optional [bool] (session filter);
@@ -279,7 +290,7 @@
 
   var api = { DEFAULTS: DEFAULTS, SWING: SWING, POINTS_NEEDED: POINTS_NEEDED, atrSeries: atrSeries, target: target,
     tradeStep: tradeStep, quality: quality, grade: grade, lots: lots, inLondon: inLondon, inNewYork: inNewYork,
-    goldMarketOpen: goldMarketOpen, build4H: build4H, trend4H: trend4H, run: run, record: record, localParts: localParts };
+    goldMarketOpen: goldMarketOpen, build4H: build4H, buildHTF: buildHTF, trend4H: trend4H, trendHTF: trendHTF, SETUPS: SETUPS, run: run, record: record, localParts: localParts };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Aurum = api;
 })(typeof window !== "undefined" ? window : this);

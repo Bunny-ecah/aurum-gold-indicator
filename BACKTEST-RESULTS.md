@@ -44,6 +44,12 @@ With a 0.50 spread instead of 0.30: profit factor 1.13, +19.0R.
 
 The 30m setup was found after more settings had been tried (on 30m too), so there is a bit more chance it is luck. 1H stays the main setup; 30m (own settings) is a good second demo test.
 
+**Using the 30m setup:**
+- **Web app:** Settings → *Signal timeframe* → **30m**. It applies these settings by itself.
+- **Telegram bot:** set the variable `AURUM_SIGNAL_TF` to `30`, or `60,30` for both.
+- **TradingView:** on a 30m chart set *Trading sessions* = **New York only** and *Trend timeframe* = **1 hour (60)**. The panel's ⚠ disappears when the setup matches.
+- **MT5:** load `mt5/presets/Recommended-M30.set` on an M30 chart. The AurumEA follows the indicator's defaults (the 1H setup), so for 30m trade the signals by hand.
+
 ### What did not work
 
 | Settings | Profit factor | Total |

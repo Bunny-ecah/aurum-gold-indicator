@@ -2,7 +2,7 @@ name: Aurum Telegram signals
 
 on:
   schedule:
-    - cron: "3 * * * *"   # every hour, 3 minutes after the 1H candle closes (GitHub may start it a few minutes late)
+    - cron: "3,33 * * * *"   # every 30 minutes, just after a candle closes (GitHub may start it a few minutes late)
   workflow_dispatch:
     inputs:
       test:
@@ -37,6 +37,7 @@ jobs:
           RISK_PCT: ${{ vars.AURUM_RISK_PCT }}
           MAX_LOSSES: ${{ vars.AURUM_MAX_LOSSES }}
           TZ_NAME: ${{ vars.AURUM_TIMEZONE }}
+          SIGNAL_TF: ${{ vars.AURUM_SIGNAL_TF }}
       - name: Remember last checked candle
         if: success()
         uses: actions/cache/save@v4

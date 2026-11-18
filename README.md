@@ -39,7 +39,8 @@ On real XAUUSD data from 2012 to 2022, the default settings on the **1H chart** 
 - **WATCH** means a setup is forming on the live candle; it becomes BUY NOW / SELL NOW only if the candle closes that way.
 - **Alerts:** press 🔔 for a sound and a browser notification on every new signal and when a trade hits its stop or target (keep the tab open).
 - **For trading:** match your broker's XAUUSD price once (Settings) so the plan shows your broker's prices; **📋 Copy plan** copies entry, SL, TP and lot; **Journal** tab to mark signals Took/Skipped with notes and export to CSV; candle-close countdown; record and equity curve after spread.
-- **More tools:** timeframe views (15m / 1H / 4H / 1D; signals stay on 1H), price alerts (tap ＋🔔 then the chart), big USD news warnings on the panel and chart, a daily loss limit (default: stop after 2 losses), a *demo since* record with 20-trade progress, and **Install app** to put it on your phone's home screen (on GitHub Pages).
+- **Signal timeframe:** 1H (main) or **30m** (Settings), each with its tested settings — 30m uses the 1H trend and trades only the New York session. Same 282 signals as the 30m backtest.
+- **More tools:** timeframe views (1m / 15m / 30m / 1H / 4H / 1D; signals come from the signal timeframe), price alerts (tap ＋🔔 then the chart), big USD news warnings on the panel and chart, a daily loss limit (default: stop after 2 losses), a *demo since* record with 20-trade progress, and **Install app** to put it on your phone's home screen (on GitHub Pages).
 - It never places trades.
 
 ## Signals on Telegram

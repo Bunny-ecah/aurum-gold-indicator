@@ -1,6 +1,6 @@
 # Aurum signals on Telegram (free, laptop can be off)
 
-A small job on GitHub checks gold **every hour** with the same rules as the web app and sends a Telegram message to you (and your brother) for:
+A small job on GitHub checks gold **every 30 minutes** with the same rules as the web app and sends a Telegram message to you (and your brother) for:
 
 - every new **BUY NOW / SELL NOW** signal, with entry, SL, TP, RR, lot size, quality and win chance
 - every trade that hits its **stop loss or take profit**
@@ -43,6 +43,7 @@ Repository **Settings → Secrets and variables → Actions**:
 | `AURUM_RISK_PCT` | `1` | risk per trade in % |
 | `AURUM_MAX_LOSSES` | `2` | daily loss limit shown in messages (0 = off) |
 | `AURUM_TIMEZONE` | `Asia/Kuala_Lumpur` | time zone for times in messages |
+| `AURUM_SIGNAL_TF` | `60` | `60` = 1H signals (default), `30` = 30m signals (New York session), `60,30` = both |
 
 ## 4. Switch it on and test
 
