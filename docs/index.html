@@ -91,7 +91,26 @@ tr[data-bar]:hover td{background:var(--chip)}
 label.f input[type=checkbox]{width:16px;height:16px}
 .note{color:var(--muted);font-size:12px;margin:8px 0}
 .foot{padding:10px 16px 14px;color:var(--muted);font-size:11.5px;border-top:1px solid var(--line)}
+#mstat{position:absolute;right:76px;top:8px;display:none;padding:5px 10px;border-radius:10px;font-weight:800;font-size:13px;letter-spacing:.04em;background:var(--chip);border:1px solid var(--line);pointer-events:none}
+#mstat.buy{color:var(--up);border-color:var(--up)}#mstat.sell{color:var(--down);border-color:var(--down)}#mstat.wait{color:var(--accent2)}
+#mstat small{font-weight:600;color:var(--muted);margin-left:6px}
+#sessKey{position:absolute;left:12px;bottom:30px;font-size:10.5px;color:var(--muted);pointer-events:none;display:flex;gap:10px}
+#sessKey i{display:inline-block;width:10px;height:4px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 12px 0}
+.actions .btn{font-size:12px;padding:5px 9px}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#2a5fd8);border-color:transparent;color:#fff}
+.btn.primary:hover{box-shadow:0 0 0 3px var(--glow)}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--accent);color:#fff;padding:9px 16px;border-radius:10px;font-size:13px;font-weight:600;transition:all .25s;pointer-events:none;z-index:9;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.spark{display:block;width:100%;height:46px;margin:4px 0 2px}
+.jsel{background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:2px 4px;font-size:12px}
+.jnote{background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:12px;width:100%}
+.clock{font-size:12px;color:rgba(225,235,255,.75)}
+.clock b{color:#fff;font-weight:600}
+a{color:var(--accent2)}
 @media (max-width:860px){
+  #mstat{display:block;top:30px;left:12px;right:auto}
+  .clock{display:none}
   main{grid-template-columns:1fr;height:auto}
   #chartWrap{height:62vh;border-right:0;border-bottom:1px solid var(--line)}
   header{padding:8px 16px;gap:10px}
@@ -106,6 +125,7 @@ label.f input[type=checkbox]{width:16px;height:16px}
   <div class="price num" id="price">—</div>
   <div class="chg num" id="chg"></div>
   <div class="live"><span class="dot" id="dot"></span><span id="liveTxt">connecting…</span></div>
+  <div class="clock num" id="clock"></div>
   <div class="spacer"></div>
   <button class="btn" id="alertBtn" title="Browser notification + sound on every new signal">🔔 Alerts off</button>
   <button class="btn" id="themeBtn" title="Light / dark">Theme</button>
@@ -115,20 +135,25 @@ label.f input[type=checkbox]{width:16px;height:16px}
     <canvas id="chart"></canvas>
     <div id="legend"></div>
     <button class="btn" id="toLatest">Latest ›</button>
+    <div id="mstat"></div>
+    <div id="sessKey"><span><i style="background:var(--accent)"></i>London</span><span><i style="background:var(--gold)"></i>New York</span></div>
     <div id="loading">Loading gold prices…</div>
   </div>
   <aside>
     <div class="status" id="statusBox"><div class="big" id="statusBig">WAIT</div><div class="sub" id="statusSub">—</div></div>
     <div class="rows" id="planRows"></div>
-    <div class="sec">Record (this chart's history)</div>
+    <div class="actions" id="actions"></div>
+    <div class="sec" id="recTitle">Record</div>
     <div class="rows" id="recRows"></div>
     <div class="tabs">
       <button class="btn on" data-tab="trades">Trades</button>
+      <button class="btn" data-tab="journal">Journal</button>
       <button class="btn" data-tab="settings">Settings</button>
       <button class="btn" data-tab="about">About</button>
     </div>
     <div id="tabBody"></div>
     <div class="foot">Signals only — this page never places trades. Demo research, not financial advice.</div>
+    <div id="toast"></div>
   </aside>
 </main>
 <script src="aurum.js"></script>
@@ -141,7 +166,8 @@ var H = 3600000;
 
 // ---------------- settings ----------------
 var SKEY = "aurum.web.settings.v1";
-var cfg = Object.assign({}, A.DEFAULTS, { source: "paxg", tdKey: "", showAll: false, showPast: true, alerts: false, theme: "" });
+var cfg = Object.assign({}, A.DEFAULTS, { source: "paxg", tdKey: "", showAll: false, showPast: true, alerts: false, theme: "",
+  spread: 0.30, brokerOff: 0, brokerAt: 0, showEMA: true, showSess: true });
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(SKEY) || "{}")); } catch (e) {}
 function save() { try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch (e) {} }
 if (cfg.theme) document.documentElement.setAttribute("data-theme", cfg.theme);
@@ -150,10 +176,22 @@ if (cfg.theme) document.documentElement.setAttribute("data-theme", cfg.theme);
 var closed = [];        // closed 1H candles while the gold market is open
 var forming = null;     // the live candle
 var result = null, trend = null, sessL = [], sessN = [], preview = null;
-var lastPrice = null, booted = false;
+var lastPrice = null, booted = false, gen = 0;
+var JKEY = "aurum.web.journal.v1", journal = {};
+try { journal = JSON.parse(localStorage.getItem(JKEY) || "{}"); } catch (e) {}
+function saveJournal() { try { localStorage.setItem(JKEY, JSON.stringify(journal)); } catch (e) {} }
 
 // ---------------- formatting ----------------
-function fp(x) { return x == null || isNaN(x) ? "—" : x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+// Prices are shown shifted by the broker offset (PAXG -> your broker's XAUUSD); distances are unchanged.
+function off() { return cfg.source === "paxg" ? (+cfg.brokerOff || 0) : 0; }
+function fp(x) { return x == null || isNaN(x) ? "—" : (x + off()).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function f2(x) { return x == null || isNaN(x) ? "—" : (x + off()).toFixed(2); }
+// Result after spread (as in the backtest): R - spread / risk
+function net(s) { return s.result == null ? null : s.result - (+cfg.spread || 0) / Math.abs(s.entry - s.sl); }
+function netSignals() { return result.signals.map(function (s) { return Object.assign({}, s, { result: net(s) }); }); }
+function toast(msg) { var t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(function () { t.classList.remove("show"); }, 2200); }
+function fdur(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + " min"; }
+function nextMarketOpen(ms) { var t = Math.ceil(ms / H) * H; for (var i = 0; i < 24 * 8; i++, t += H) if (A.goldMarketOpen(t)) return t; return null; }
 function fr(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "R"; }
 function pct(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "%"; }
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
@@ -172,19 +210,24 @@ function compute() {
   });
   var prev = result;
   result = A.run(closed, t.dir, cfg, { allowed: allowed, london: sessL, newyork: sessN });
-  // new confirmed signal on the candle that just closed -> alert
-  var last = result.signals[result.signals.length - 1];
-  if (booted && prev && last && last.bar === closed.length - 1) notify(last);
-  computePreview();
+  if (booted && prev) {
+    // a trade that closed on the candle that just closed -> alert
+    result.signals.forEach(function (s) { if (s.exitBar === closed.length - 1) notifyClose(s); });
+    // new confirmed signal on the candle that just closed -> alert
+    var last = result.signals[result.signals.length - 1];
+    if (last && last.bar === closed.length - 1) notify(last);
+  }
+  previewAt = 0; computePreview();
+  if (tab === "trades" || tab === "journal") renderTab();
 }
 // Would the live candle be a signal if it closed at the current price? (not confirmed)
 var previewAt = 0;
 function computePreview() {
-  preview = null;
-  if (!result || !forming || result.open) return;
+  if (!result || !forming || result.open || !A.goldMarketOpen(forming.t)) { preview = null; return; }
   var now = Date.now();
-  if (now - previewAt < 1500) return;
+  if (now - previewAt < 1500) return;       // keep the last answer between recomputes (no flicker)
   previewAt = now;
+  preview = null;
   var bars = closed.concat([forming]);
   var t = A.trend4H(bars, 60).dir;
   var allowed = cfg.sessions === "All day" ? null : bars.map(function (b) {
@@ -211,12 +254,24 @@ function beep() {
 function notify(s) {
   var key = "aurum.web.lastAlert";
   try { if (localStorage.getItem(key) === String(s.t)) return; localStorage.setItem(key, String(s.t)); } catch (e) {}
-  if (!cfg.alerts) return;
   var side = s.side > 0 ? "BUY" : "SELL";
   var body = "Grade " + s.grade + " " + s.quality + "/100 | Entry " + fp(s.entry) + " | SL " + fp(s.sl) + " | TP " + fp(s.tp) + " | RR 1:" + s.rr.toFixed(1) + " | " + s.why;
+  flashTitle(side + " NOW");
+  if (!cfg.alerts) return;
   beep();
   try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum " + side + " gold 1H", { body: body }); } catch (e) {}
 }
+function notifyClose(s) {
+  var key = "aurum.web.lastClose";
+  try { if (localStorage.getItem(key) === String(s.t)) return; localStorage.setItem(key, String(s.t)); } catch (e) {}
+  var msg = (s.side > 0 ? "BUY" : "SELL") + " closed: " + s.how + " " + fr(net(s));
+  toast(msg);
+  if (!cfg.alerts) return;
+  beep();
+  try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum trade closed", { body: msg }); } catch (e) {}
+}
+var flashUntil = 0, flashText = "";
+function flashTitle(t) { flashText = t; flashUntil = Date.now() + 30 * 60000; }
 function alertBtn() {
   $("alertBtn").textContent = cfg.alerts ? "🔔 Alerts on" : "🔔 Alerts off";
   $("alertBtn").classList.toggle("on", !!cfg.alerts);
@@ -263,8 +318,8 @@ function fetchJSON(url) {
     return r.json();
   });
 }
-function binKlines(endTime, limit) {
-  var q = "/api/v3/klines?symbol=PAXGUSDT&interval=1h&limit=" + (limit || 1000) + (endTime ? "&endTime=" + endTime : "");
+function binKlines(endTime, limit, startTime) {
+  var q = "/api/v3/klines?symbol=PAXGUSDT&interval=1h&limit=" + (limit || 1000) + (endTime ? "&endTime=" + endTime : "") + (startTime ? "&startTime=" + startTime : "");
   var tries = restBase ? [restBase] : BIN_REST.slice();
   function attempt(k) {
     return fetchJSON(tries[k] + q).then(function (d) { restBase = tries[k]; return d; }, function (e) {
@@ -294,7 +349,8 @@ function loadPaxg() {
   });
 }
 function connectWs() {
-  try { if (ws) ws.close(); } catch (e) {}
+  var myGen = gen;
+  try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) {}
   var url = BIN_WS[wsIdx % BIN_WS.length];
   ws = new WebSocket(url);
   ws.onopen = function () { wsRetry = 0; setLive("on", "live"); };
@@ -311,23 +367,32 @@ function connectWs() {
     tick();
   };
   ws.onclose = function () {
+    if (myGen !== gen) return;
     setLive("bad", "reconnecting…");
     wsIdx++; wsRetry++;
-    setTimeout(connectWs, Math.min(30000, 1000 * Math.pow(2, Math.min(wsRetry, 5))));
+    setTimeout(function () { if (myGen === gen) { refresh(); connectWs(); } }, Math.min(30000, 1000 * Math.pow(2, Math.min(wsRetry, 5))));
   };
   ws.onerror = function () { try { ws.close(); } catch (e) {} };
 }
-// Safety net: if the stream is silent, refresh the last candles over REST.
-setInterval(function () {
-  if (cfg.source !== "paxg" || !closed.length) return;
-  if (Date.now() - lastMsg < 45000) return;
-  binKlines(null, 5).then(function (d) {
+// Fill any gap since the last closed candle (after sleep, lost connection or a hidden tab).
+function refresh() {
+  if (!closed.length) return;
+  if (cfg.source === "twelve" && cfg.tdKey) return pollTwelve();
+  var from = closed[closed.length - 1].t;
+  return binKlines(null, 1000, from).then(function (d) {
     var now = Date.now(), changed = false;
     d.forEach(function (k) { changed = mergeBar(binBar(k, now)) || changed; });
     if (changed) compute();
     tick();
   }).catch(function () {});
+}
+setInterval(function () {
+  if (cfg.source !== "paxg" || !closed.length) return;
+  if (Date.now() - lastMsg < 45000) return;      // stream is silent -> refresh over REST
+  refresh();
 }, 30000);
+document.addEventListener("visibilitychange", function () { if (!document.hidden && booted) refresh(); });
+window.addEventListener("online", function () { if (booted) refresh(); });
 
 // Twelve Data: real XAU/USD with the viewer's own free API key (polled every 2 minutes).
 function tdUrl(size) {
@@ -349,22 +414,25 @@ function loadTwelve() {
     tdBars(d).forEach(mergeBar);
     setLive("on", "updates every 2 min");
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(function () {
-      fetchJSON(tdUrl(3)).then(function (d2) {
-        var changed = false;
-        tdBars(d2).forEach(function (b) { changed = mergeBar(b) || changed; });
-        if (changed) compute();
-        setLive("on", "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-        tick();
-      }).catch(function (e) { setLive("bad", "update failed: " + e.message.slice(0, 40)); });
-    }, 120000);
+    pollTimer = setInterval(pollTwelve, 120000);
   });
+}
+function pollTwelve() {
+  // ask for enough candles to cover any gap since the last closed one
+  var gap = closed.length ? Math.ceil((Date.now() - closed[closed.length - 1].t) / H) + 2 : 3;
+  return fetchJSON(tdUrl(Math.min(5000, Math.max(3, gap)))).then(function (d2) {
+    var changed = false;
+    tdBars(d2).forEach(function (b) { changed = mergeBar(b) || changed; });
+    if (changed) compute();
+    setLive("on", "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    tick();
+  }).catch(function (e) { setLive("bad", "update failed: " + e.message.slice(0, 40)); });
 }
 
 function start() {
   $("loading").style.display = "flex";
   $("loading").textContent = "Loading gold prices…";
-  booted = false;
+  booted = false; gen++;
   try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) {}
   if (pollTimer) clearInterval(pollTimer);
   var p = cfg.source === "twelve" && cfg.tdKey ? loadTwelve() : loadPaxg();
@@ -402,26 +470,59 @@ function sessionOK(ms) {
   return cfg.sessions === "London only" ? l : cfg.sessions === "New York only" ? n : l || n;
 }
 function winChance(g) {
-  var r = A.record(result.signals, function (x) { return x.grade === g; });
+  var ns = netSignals();
+  var r = A.record(ns, function (x) { return x.grade === g; });
   if (r.n >= 5) return r.winPct.toFixed(0) + "% <span class='muted'>(grade " + g + ", " + r.n + " trades)</span>";
-  var all = A.record(result.signals);
+  var all = A.record(ns);
   return all.n ? all.winPct.toFixed(0) + "% <span class='muted'>(all grades, " + all.n + ")</span>" : "—";
 }
-function planRows(s, live) {
+function lotInfo(s) {
   var risk = Math.abs(s.entry - s.sl), lot = A.lots(cfg.balance, cfg.riskPct, s.entry, s.sl, cfg.contract);
-  var lotTxt, realPct;
-  if (lot >= 0.01) { realPct = lot * risk * cfg.contract / cfg.balance * 100; lotTxt = lot.toFixed(2) + " lot"; }
-  else { realPct = 0.01 * risk * cfg.contract / cfg.balance * 100; lotTxt = "<span class='warn'>0.01 min lot = " + realPct.toFixed(1) + "% risk</span>"; }
+  if (lot >= 0.01) return { lot: lot, pct: lot * risk * cfg.contract / cfg.balance * 100, min: false };
+  return { lot: 0.01, pct: 0.01 * risk * cfg.contract / cfg.balance * 100, min: true };
+}
+function planRows(s, live) {
+  var risk = Math.abs(s.entry - s.sl), li = lotInfo(s);
+  var lotTxt = li.min ? "<span class='warn'>0.01 min lot = " + li.pct.toFixed(1) + "% risk</span>" : li.lot.toFixed(2) + " lot";
   var h = "";
   h += row("ENTRY", "<span class='num'>" + fp(s.entry) + "</span>");
-  h += row("STOP LOSS", "<span class='num'>" + fp(s.sl) + "</span> <span class='down num'>(" + pct(-realPct) + ", $" + risk.toFixed(2) + " away)</span>");
-  h += row("TAKE PROFIT", "<span class='num'>" + fp(s.tp) + "</span> <span class='up num'>(" + pct(realPct * s.rr) + ")</span>");
+  h += row("STOP LOSS", "<span class='num'>" + fp(s.sl) + "</span> <span class='down num'>(" + pct(-li.pct) + ", $" + risk.toFixed(2) + " away)</span>");
+  h += row("TAKE PROFIT", "<span class='num'>" + fp(s.tp) + "</span> <span class='up num'>(" + pct(li.pct * s.rr) + ", $" + Math.abs(s.tp - s.entry).toFixed(2) + ")</span>");
   h += row("RR · LOT", "<span class='num'>1:" + s.rr.toFixed(1) + "</span> · " + lotTxt);
   h += row("QUALITY", "<span class='" + gradeCls(s.grade) + "'>" + s.grade + "</span> <span class='num'>" + s.quality + "/100</span> · " + esc(s.why));
   h += row("WIN CHANCE", winChance(s.grade));
   if (live != null) h += row("NOW", "<span class='num " + (live >= 0 ? "up" : "down") + "'>" + fr(live) + "</span> <span class='muted'>(" + (closed.length - 1 - s.bar) + " of " + cfg.maxBars + " candles)</span>");
   return h;
 }
+function planText(s) {
+  var li = lotInfo(s);
+  return (s.side > 0 ? "BUY" : "SELL") + " XAUUSD (Aurum 1H) | Entry " + f2(s.entry) + " | SL " + f2(s.sl) + " | TP " + f2(s.tp) +
+    " | Lot " + li.lot.toFixed(2) + " | RR 1:" + s.rr.toFixed(1) + " | Grade " + s.grade + " " + s.quality + "/100 | " + s.why;
+}
+function copyText(t) {
+  function fallback() {
+    var ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); toast("Plan copied"); } catch (e) { toast("Copy failed"); }
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(function () { toast("Plan copied"); }, fallback);
+  else fallback();
+}
+function sparkline(vals) {
+  if (vals.length < 2) return "";
+  var w = 300, h = 46, lo = Math.min(0, Math.min.apply(null, vals)), hi = Math.max(0, Math.max.apply(null, vals));
+  var span = hi - lo || 1;
+  function X(i) { return (i / (vals.length - 1) * w).toFixed(1); }
+  function Y(v) { return (h - 3 - (v - lo) / span * (h - 6)).toFixed(1); }
+  var pts = vals.map(function (v, i) { return X(i) + "," + Y(v); }).join(" ");
+  var col = vals[vals.length - 1] >= 0 ? "var(--up)" : "var(--down)";
+  return "<svg class='spark' viewBox='0 0 " + w + " " + h + "' preserveAspectRatio='none'>" +
+    "<line x1='0' x2='" + w + "' y1='" + Y(0) + "' y2='" + Y(0) + "' stroke='var(--line)' stroke-dasharray='3 3'/>" +
+    "<polygon points='0," + Y(0) + " " + pts + " " + w + "," + Y(0) + "' fill='" + col + "' opacity='.12'/>" +
+    "<polyline points='" + pts + "' fill='none' stroke='" + col + "' stroke-width='1.6' vector-effect='non-scaling-stroke'/></svg>";
+}
+var actionSig = null;
 function renderPanel() {
   if (!result) return;
   var price = lastPrice != null ? lastPrice : closed[closed.length - 1].c;
@@ -431,59 +532,96 @@ function renderPanel() {
   var lastSig = result.signals[result.signals.length - 1];
   var open = result.open;
   var justNow = open && open.bar === closed.length - 1;
-  var nextClose = (forming ? forming.t : closed[closed.length - 1].t + H) + H;
-  var mins = Math.max(0, Math.round((nextClose - nowMs) / 60000));
+  var marketOpen = A.goldMarketOpen(nowMs);
+  var nextClose = (Math.floor(nowMs / H) + 1) * H;
+  var mins = fdur(nextClose - nowMs);
   box.className = "status";
-  var h = "";
+  var h = "", mst = ["WAIT", "wait"];
   var tr = dir > 0 ? ["UP", "up"] : dir < 0 ? ["DOWN", "down"] : ["FLAT", "muted"];
-  h += row("TREND", "<span class='" + tr[1] + "'><b>" + tr[0] + "</b></span> <span class='muted'>(" + trend.source[trend.source.length - 1] + " vs EMA200)</span>");
+  var emaNow = trend.ema[trend.ema.length - 1];
+  h += row("TREND", "<span class='" + tr[1] + "'><b>" + tr[0] + "</b></span> <span class='muted'>(" + trend.source[trend.source.length - 1] + " EMA200" +
+    (emaNow != null ? " <span class='num'>" + fp(emaNow) + "</span>, $" + Math.abs(price - emaNow).toFixed(0) + (price >= emaNow ? " below" : " above") : "") + ")</span>");
   var ss = sessionText(nowMs);
   h += row("SESSION", "<span class='" + ss[1] + "'>" + ss[0] + "</span>" + (cfg.sessions !== "All day" ? " <span class='muted'>· trading " + cfg.sessions + "</span>" : ""));
+  actionSig = null;
   if (open) {
     var side = open.side > 0 ? "BUY" : "SELL";
     box.classList.add(open.side > 0 ? "buy" : "sell");
     big.textContent = justNow ? side + " NOW" : "IN " + side;
-    sub.textContent = justNow ? "Signal on the candle that closed at " + fdt(closed[closed.length - 1].t + H) + ". Use the plan below." : "Trade open since " + fdt(open.t + H) + " · manage with the stop and target below";
+    sub.textContent = justNow ? "Signal on the candle that closed at " + fdt(closed[closed.length - 1].t + H) + ". Use the plan below." : "Trade open since " + fdt(open.t + H) + " · the stop and target are below";
     var live = (price - open.entry) / Math.abs(open.entry - open.sl) * open.side;
     h += planRows(open, justNow ? null : live);
+    actionSig = open; mst = [big.textContent, open.side > 0 ? "buy" : "sell"];
+  } else if (!marketOpen) {
+    var reopen = nextMarketOpen(nowMs);
+    big.textContent = "MARKET CLOSED";
+    sub.textContent = reopen ? "Gold reopens " + fdt(reopen) + " (in " + fdur(reopen - nowMs) + "). No signals until then." : "Gold market closed.";
+    mst = ["CLOSED", "wait"];
   } else if (preview) {
     big.textContent = "WATCH " + (preview.side > 0 ? "BUY" : "SELL");
-    sub.textContent = "A " + (preview.side > 0 ? "buy" : "sell") + " setup is forming. Confirmed only if the candle closes like this, in " + mins + " min.";
+    sub.textContent = "A " + (preview.side > 0 ? "buy" : "sell") + " setup is forming. Confirmed only if the candle closes like this, in " + mins + ". Do not enter yet.";
     h += planRows(preview, null);
+    mst = [big.textContent, "wait"];
   } else {
     big.textContent = "WAIT";
-    sub.textContent = "No trade now · next candle closes in " + mins + " min";
-    var na = nearestAreas(price), next;
+    sub.textContent = "No trade now · candle closes in " + mins;
+  }
+  if (!open && !preview) {
+    var na = nearestAreas(price), next, atr = result.atr || 1;
+    function away(p) { var d = Math.abs(price - p); return " <span class='muted num'>($" + d.toFixed(2) + " · " + (d / atr).toFixed(1) + " ATR away)</span>"; }
     if (!sessionOK(nowMs)) next = "Wait for " + cfg.sessions + " to open";
     else if (dir > 0) {
       var bz = na.dz, bs = na.sp;
       if (!bz && !bs) next = "No buy area below";
-      else if (bz && (!bs || bz.top >= bs.p)) next = "Dip into Demand <span class='num'>" + fp(bz.bot) + "–" + fp(bz.top) + "</span> + bullish candle";
-      else next = "Dip to Support <span class='num'>" + fp(bs.p) + "</span>" + (cfg.mode === "Aggressive" ? "" : " (needs a demand zone in " + cfg.mode + ")") + " + bullish candle";
+      else if (bz && (!bs || bz.top >= bs.p)) next = "Dip into Demand <span class='num'>" + fp(bz.bot) + "–" + fp(bz.top) + "</span> + bullish candle" + away(bz.top);
+      else next = "Dip to Support <span class='num'>" + fp(bs.p) + "</span>" + (cfg.mode === "Aggressive" ? "" : " (needs a demand zone in " + cfg.mode + ")") + " + bullish candle" + away(bs.p);
     } else if (dir < 0) {
       var sz = na.sz, rs = na.rs;
       if (!sz && !rs) next = "No sell area above";
-      else if (sz && (!rs || sz.bot <= rs.p)) next = "Rally into Supply <span class='num'>" + fp(sz.bot) + "–" + fp(sz.top) + "</span> + bearish candle";
-      else next = "Rally to Resistance <span class='num'>" + fp(rs.p) + "</span>" + (cfg.mode === "Aggressive" ? "" : " (needs a supply zone in " + cfg.mode + ")") + " + bearish candle";
+      else if (sz && (!rs || sz.bot <= rs.p)) next = "Rally into Supply <span class='num'>" + fp(sz.bot) + "–" + fp(sz.top) + "</span> + bearish candle" + away(sz.bot);
+      else next = "Rally to Resistance <span class='num'>" + fp(rs.p) + "</span>" + (cfg.mode === "Aggressive" ? "" : " (needs a supply zone in " + cfg.mode + ")") + " + bearish candle" + away(rs.p);
     } else next = "Wait for the trend to turn";
     h += row("NEXT", next);
+    h += row("VOLATILITY", "<span class='num'>$" + atr.toFixed(2) + "</span> <span class='muted'>average 1H range (ATR)</span>");
     if (result.lastSkip && closed.length - 1 - result.lastSkip.bar < 24)
       h += row("NOTE", (result.lastSkip.side > 0 ? "BUY" : "SELL") + " setup " + fdt(closed[result.lastSkip.bar].t + H) + " skipped: " + esc(result.lastSkip.why), "muted");
     if (lastSig && lastSig.result != null)
-      h += row("LAST TRADE", (lastSig.side > 0 ? "BUY " : "SELL ") + fdt(lastSig.t + H) + " → <span class='num " + (lastSig.result >= 0 ? "up" : "down") + "'>" + fr(lastSig.result) + "</span> <span class='muted'>(" + lastSig.how + ")</span>");
+      h += row("LAST TRADE", (lastSig.side > 0 ? "BUY " : "SELL ") + fdt(lastSig.t + H) + " → <span class='num " + (net(lastSig) >= 0 ? "up" : "down") + "'>" + fr(net(lastSig)) + "</span> <span class='muted'>(" + lastSig.how + ")</span>");
+  }
+  if (cfg.source === "paxg") {
+    h += row("PRICES", off() ? "matched to your broker <span class='num'>(" + (off() >= 0 ? "+" : "−") + "$" + Math.abs(off()).toFixed(2) + " vs PAXG, set " + fdur(nowMs - (cfg.brokerAt || nowMs)) + " ago)</span>"
+      : "PAXG <span class='muted'>· may differ from your broker by a few $</span> <a href='#' id='matchLink'>Match broker</a>", "muted");
   }
   $("planRows").innerHTML = h;
+  var ml = $("matchLink"); if (ml) ml.onclick = function (e) { e.preventDefault(); openTab("settings"); setTimeout(function () { var i = document.querySelector("[data-k=brokerPrice]"); if (i) i.focus(); }, 50); };
+  var mEl = $("mstat"); mEl.className = mst[1]; mEl.innerHTML = esc(mst[0]) + (marketOpen ? "<small>" + mins + "</small>" : "");
 
-  var rec = A.record(result.signals), r = "";
-  var first = closed[0].t;
+  // actions
+  var act = "";
+  var sig = actionSig || preview;
+  if (sig) act += "<button class='btn primary' id='copyBtn'>📋 Copy plan</button><button class='btn' id='showBtn'>Show on chart</button>";
+  $("actions").innerHTML = act;
+  if (sig) {
+    $("copyBtn").onclick = function () { copyText(planText(sig)); };
+    $("showBtn").onclick = function () { view.offset = 0; dirty(); };
+  }
+
+  // record (after spread, like the backtest)
+  var ns = netSignals(), rec = A.record(ns), r = "";
+  $("recTitle").textContent = "Record · after $" + (+cfg.spread || 0).toFixed(2) + " spread";
   r += row("TRADES", rec.n ? "<span class='num'>" + rec.n + "</span> · win <span class='num'>" + rec.winPct.toFixed(0) + "%</span> · <span class='num " + (rec.total >= 0 ? "up" : "down") + "'>" + fr(rec.total) + "</span>" : "none yet");
   if (rec.n) {
+    var eq = [0], acc = 0;
+    ns.forEach(function (s) { if (s.result != null) { acc += s.result; eq.push(acc); } });
+    var money = rec.total * cfg.riskPct / 100 * cfg.balance;
+    r += "<div>" + sparkline(eq) + "</div>";
+    r += row("AT YOUR RISK", "<span class='num " + (money >= 0 ? "up" : "down") + "'>" + (money >= 0 ? "+$" : "−$") + Math.abs(money).toFixed(0) + "</span> <span class='muted'>on $" + cfg.balance + " at " + cfg.riskPct + "% (approx.)</span>");
     r += row("PROFIT FACTOR", "<span class='num'>" + (isFinite(rec.pf) ? rec.pf.toFixed(2) : "∞") + "</span> · avg <span class='num'>" + fr(rec.avg) + "</span>");
     r += row("BY GRADE", ["A", "B", "C"].map(function (g) {
-      var x = A.record(result.signals, function (s) { return s.grade === g; });
+      var x = A.record(ns, function (s) { return s.grade === g; });
       return "<span class='" + gradeCls(g) + "'>" + g + "</span> <span class='num'>" + (x.n ? x.winPct.toFixed(0) + "%" : "–") + "</span><span class='muted'>(" + x.n + ")</span>";
     }).join(" · "));
-    var done = result.signals.filter(function (s) { return s.result != null; }).slice(-20);
+    var done = ns.filter(function (s) { return s.result != null; }).slice(-20);
     r += row("LAST 20", "<span class='last20'>" + done.map(function (s) { return "<span class='" + (s.result > 0 ? "w" : "l") + "' title='" + fr(s.result) + "'></span>"; }).join("") + "</span>");
   }
   var st = result.stats;
@@ -492,18 +630,19 @@ function renderPanel() {
     .map(function (x) { return x[0] + " " + Math.round(100 * x[1] / Math.max(1, st.setups)) + "%"; }).join(" · ");
   r += row("SETUPS", "<span class='num'>" + st.setups + "</span> seen · <span class='num'>" + st.traded + "</span> traded");
   if (blocked) r += row("BLOCKED BY", blocked, "muted");
-  r += row("HISTORY", fdt(first) + " → now <span class='muted'>(" + closed.length + " candles)</span>", "muted");
+  r += row("HISTORY", fdt(closed[0].t) + " → now <span class='muted'>(" + closed.length + " candles)</span>", "muted");
   $("recRows").innerHTML = r;
 }
 
 // ---------------- tabs ----------------
 var tab = "trades";
+function openTab(name) {
+  tab = name;
+  document.querySelectorAll(".tabs .btn").forEach(function (x) { x.classList.toggle("on", x.getAttribute("data-tab") === name); });
+  renderTab();
+}
 document.querySelectorAll(".tabs .btn").forEach(function (b) {
-  b.onclick = function () {
-    tab = b.getAttribute("data-tab");
-    document.querySelectorAll(".tabs .btn").forEach(function (x) { x.classList.toggle("on", x === b); });
-    renderTab();
-  };
+  b.onclick = function () { openTab(b.getAttribute("data-tab")); };
 });
 function sel(name, label, opts) {
   return '<label class="f">' + label + '<select data-k="' + name + '">' + opts.map(function (o) {
@@ -511,11 +650,29 @@ function sel(name, label, opts) {
     return '<option value="' + v + '"' + (String(cfg[name]) === String(v) ? " selected" : "") + ">" + t + "</option>";
   }).join("") + "</select></label>";
 }
-function inp(name, label, step) {
-  return '<label class="f">' + label + '<input type="number" step="' + step + '" data-k="' + name + '" value="' + cfg[name] + '"></label>';
+function inp(name, label, step, allowZero) {
+  return '<label class="f">' + label + '<input type="number" step="' + step + '" data-k="' + name + '"' + (allowZero ? ' data-zero="1"' : "") + ' value="' + cfg[name] + '"></label>';
 }
 function chk(name, label) {
   return '<label class="f">' + label + '<input type="checkbox" data-k="' + name + '"' + (cfg[name] ? " checked" : "") + "></label>";
+}
+function sigKey(s) { return String(s.t); }
+function csvCell(v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+function exportCSV() {
+  var head = ["Signal time", "Side", "Grade", "Quality", "Entry", "SL", "TP", "RR", "Lot", "Result R (after spread)", "Exit", "My action", "Note"];
+  var lines = [head.join(",")];
+  result.signals.forEach(function (s) {
+    var j = journal[sigKey(s)] || {}, li = lotInfo(s);
+    lines.push([new Date(s.t + H).toISOString().replace("T", " ").slice(0, 16) + " UTC", s.side > 0 ? "BUY" : "SELL", s.grade, s.quality,
+      f2(s.entry), f2(s.sl), f2(s.tp), s.rr.toFixed(2), li.lot.toFixed(2), s.result == null ? "open" : net(s).toFixed(2), s.how || "",
+      j.a || "", j.n || ""].map(csvCell).join(","));
+  });
+  var blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "aurum-journal-" + new Date().toISOString().slice(0, 10) + ".csv";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  toast("Journal exported");
 }
 function renderTab() {
   var el = $("tabBody"), h = "";
@@ -523,19 +680,49 @@ function renderTab() {
     if (!result || !result.signals.length) { el.innerHTML = "<p class='note'>No signals in the loaded history yet.</p>"; return; }
     h = "<table><tr><th>Signal</th><th>Side</th><th>Gr.</th><th>Entry</th><th>Result</th></tr>";
     result.signals.slice().reverse().slice(0, 60).forEach(function (s) {
+      var r = net(s);
       h += "<tr data-bar='" + s.bar + "' style='cursor:pointer'><td>" + fdt(s.t + H) + "</td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") +
         "</td><td class='" + gradeCls(s.grade) + "'>" + s.grade + "</td><td class='num'>" + fp(s.entry) + "</td><td class='num " +
-        (s.result == null ? "muted" : s.result >= 0 ? "up" : "down") + "'>" + (s.result == null ? "open" : fr(s.result)) + "</td></tr>";
+        (r == null ? "muted" : r >= 0 ? "up" : "down") + "'>" + (r == null ? "open" : fr(r)) + "</td></tr>";
     });
-    h += "</table><p class='note'>Tap a row to show it on the chart. Results ignore spread (about −0.05R a trade).</p>";
+    h += "</table><p class='note'>Tap a row to show it on the chart. Results are after the $" + (+cfg.spread).toFixed(2) + " spread.</p>";
     el.innerHTML = h;
     el.querySelectorAll("tr[data-bar]").forEach(function (tr) {
       tr.onclick = function () { focusBar(+tr.getAttribute("data-bar")); };
     });
+  } else if (tab === "journal") {
+    if (!result || !result.signals.length) { el.innerHTML = "<p class='note'>No signals yet.</p>"; return; }
+    var took = result.signals.filter(function (s) { var j = journal[sigKey(s)]; return j && j.a === "Took" && s.result != null; });
+    var tr = took.reduce(function (a, s) { return a + net(s); }, 0);
+    h += "<p class='note'>Mark every signal you took or skipped on your demo account (the demo plan needs 20 trades). Saved in this browser.</p>";
+    h += row("YOUR TRADES", took.length ? "<span class='num'>" + took.length + "</span> closed · <span class='num " + (tr >= 0 ? "up" : "down") + "'>" + fr(tr) + "</span>" : "none marked yet");
+    h += "<table style='margin-top:6px'><tr><th>Signal</th><th>Side</th><th>Result</th><th>Me</th></tr>";
+    result.signals.slice().reverse().slice(0, 40).forEach(function (s) {
+      var j = journal[sigKey(s)] || {}, r = net(s);
+      h += "<tr><td>" + fdt(s.t + H) + " <span class='" + gradeCls(s.grade) + "'>" + s.grade + "</span></td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") + "</td><td class='num " +
+        (r == null ? "muted" : r >= 0 ? "up" : "down") + "'>" + (r == null ? "open" : fr(r)) + "</td><td><select class='jsel' data-j='" + sigKey(s) + "'>" +
+        ["", "Took", "Skipped"].map(function (o) { return "<option" + (j.a === o ? " selected" : "") + " value='" + o + "'>" + (o || "—") + "</option>"; }).join("") +
+        "</select></td></tr><tr><td colspan='4' style='padding-top:0'><input class='jnote' placeholder='note (entry price, why, feelings…)' data-n='" + sigKey(s) + "' value='" + esc(j.n || "") + "'></td></tr>";
+    });
+    h += "</table><p class='note'><button class='btn primary' id='csvBtn'>⬇ Export to Excel (CSV)</button></p>";
+    el.innerHTML = h;
+    el.querySelectorAll("[data-j]").forEach(function (c) {
+      c.onchange = function () { var k = c.getAttribute("data-j"); journal[k] = Object.assign({}, journal[k], { a: c.value }); saveJournal(); renderTab(); };
+    });
+    el.querySelectorAll("[data-n]").forEach(function (c) {
+      c.onchange = function () { var k = c.getAttribute("data-n"); journal[k] = Object.assign({}, journal[k], { n: c.value }); saveJournal(); };
+    });
+    $("csvBtn").onclick = exportCSV;
   } else if (tab === "settings") {
     h += "<div class='sec' style='padding-left:0'>Prices</div>";
     h += sel("source", "Data", [["paxg", "PAXG live (free)"], ["twelve", "XAU/USD (Twelve Data key)"]]);
     h += '<label class="f">Twelve Data key<input type="password" data-k="tdKey" value="' + esc(cfg.tdKey) + '" placeholder="optional" style="max-width:150px"></label>';
+    if (cfg.source === "paxg") {
+      h += '<label class="f">My broker\'s XAUUSD price now<input type="number" step="0.01" data-k="brokerPrice" placeholder="e.g. ' + f2(lastPrice || 0) + '"></label>';
+      h += "<p class='note' style='margin-top:0'>Type the price your MT5 shows right now: all prices then show in your broker's terms" +
+        (off() ? " (now " + (off() >= 0 ? "+" : "−") + "$" + Math.abs(off()).toFixed(2) + ") <button class='btn' id='clearOff'>Clear</button>" : "") + ". Re-match once a day.</p>";
+    }
+    h += inp("spread", "Spread for the record ($)", "0.05", true);
     h += "<div class='sec' style='padding-left:0'>Signals</div>";
     h += sel("mode", "Signal mode", ["Balanced", "Strict", "Aggressive"]);
     h += sel("swing", "Swing size", ["Large", "Normal", "Small"]);
@@ -548,18 +735,28 @@ function renderTab() {
     h += "<div class='sec' style='padding-left:0'>Chart</div>";
     h += chk("showAll", "Show all zones and levels");
     h += chk("showPast", "Show past trades");
+    h += chk("showEMA", "Show 4H EMA200 (trend line)");
+    h += chk("showSess", "Show London / New York sessions");
     h += "<p class='note'>Tested defaults: Balanced · Large · All day · reward 1.2 · buffer 0.5 (see BACKTEST-RESULTS.md). <button class='btn' id='resetBtn'>Reset to tested defaults</button></p>";
     el.innerHTML = h;
     el.querySelectorAll("[data-k]").forEach(function (c) {
       c.onchange = function () {
         var k = c.getAttribute("data-k"), v = c.type === "checkbox" ? c.checked : c.type === "number" ? parseFloat(c.value) : c.value;
-        if (c.type === "number" && !(v > 0)) { c.value = cfg[k]; return; }
+        if (k === "brokerPrice") {
+          if (!(v > 0) || lastPrice == null) return;
+          cfg.brokerOff = Math.round((v - lastPrice) * 100) / 100; cfg.brokerAt = Date.now(); save();
+          if (Math.abs(cfg.brokerOff) > 50) toast("Check the price: $" + Math.abs(cfg.brokerOff).toFixed(0) + " from PAXG");
+          else toast("Prices matched to your broker");
+          tick(); renderTab(); return;
+        }
+        if (c.type === "number" && !(v > 0 || (c.getAttribute("data-zero") && v === 0))) { c.value = cfg[k]; return; }
         cfg[k] = v; save();
-        if (k === "source" || k === "tdKey") { if (cfg.source === "twelve" && !cfg.tdKey) return; start(); return; }
-        if (k !== "showAll" && k !== "showPast" && k !== "balance" && k !== "riskPct") compute();
+        if (k === "source" || k === "tdKey") { if (cfg.source === "twelve" && !cfg.tdKey) { renderTab(); return; } start(); renderTab(); return; }
+        if (["mode", "swing", "sessions", "minRR", "slBuffer"].indexOf(k) >= 0) compute();
         tick();
       };
     });
+    var co = $("clearOff"); if (co) co.onclick = function () { cfg.brokerOff = 0; cfg.brokerAt = 0; save(); tick(); renderTab(); };
     $("resetBtn").onclick = function () {
       ["mode", "swing", "sessions", "minRR", "slBuffer"].forEach(function (k) { cfg[k] = A.DEFAULTS[k]; });
       save(); compute(); tick(); renderTab();
@@ -568,11 +765,12 @@ function renderTab() {
     el.innerHTML = "<p class='note' style='color:var(--text)'><b>How it works.</b> Same rules as the Aurum TradingView script and MT5 indicator: " +
       "BUY when the 4H trend is up (above EMA200) and a bullish candle closes after touching a demand zone (Balanced) or support; SELL is the mirror. " +
       "Stop beyond the area + 0.5 ATR, target at the next opposite area (1.2R minimum, 3R cap). One trade at a time; 100-candle time limit.</p>" +
-      "<p class='note'><b>Prices.</b> PAXG is a gold-backed token that follows spot gold closely (usually within a few dollars). Your broker's XAUUSD price will differ a little: " +
-      "use the stop and target <i>distances</i>, or the TradingView/MT5 version on your broker's chart for exact prices. Weekend PAXG candles are left out because spot gold is closed. " +
-      "For real XAU/USD, get a free key at twelvedata.com and paste it in Settings (updates every 2 minutes).</p>" +
+      "<p class='note'><b>How to trade it.</b> Wait for <b>BUY NOW / SELL NOW</b> (after the candle closes; WATCH is not a signal yet). Press <b>Copy plan</b>, " +
+      "open the trade in MT5 with that stop, target and lot, and mark it in the <b>Journal</b>. Don't move the stop.</p>" +
+      "<p class='note'><b>Prices.</b> PAXG is a gold-backed token that follows spot gold closely. Use <b>Settings → My broker's XAUUSD price</b> so the plan shows your broker's prices. " +
+      "Weekend PAXG candles are left out because spot gold is closed. For real XAU/USD, get a free key at twelvedata.com (updates every 2 minutes).</p>" +
       "<p class='note'><b>Backtest.</b> 2012–2022 real XAUUSD 1H: 239 trades, 43% win, profit factor ≈1.2 after spread. Small edge; losing years happen. Demo first.</p>" +
-      "<p class='note'><b>Chart.</b> Drag to move, scroll or pinch to zoom, double-click to reset. WATCH = a setup forming on the live candle (not confirmed until it closes).</p>";
+      "<p class='note'><b>Chart.</b> Drag to move, scroll or pinch to zoom, double-click to reset. Gold line = 4H EMA200 (trend). Bars at the bottom = London (blue) and New York (gold) sessions.</p>";
   }
 }
 
@@ -720,6 +918,34 @@ function draw() {
     ctx.fillRect(Math.round(cx - bw / 2) + 0.5, top, Math.max(1, Math.round(bw)), Math.max(1, bot - top));
     ctx.globalAlpha = 1;
   }
+  // 4H EMA200 (the trend line)
+  if (cfg.showEMA && trend && trend.ema) {
+    ctx.strokeStyle = C.gold; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.5; ctx.beginPath();
+    var started = false;
+    for (var e = i0; e <= i1; e++) {
+      var ev = trend.ema[Math.min(e, trend.ema.length - 1)];
+      if (ev == null) { started = false; continue; }
+      var ex = xOf(e, n), ey = y(ev);
+      if (!started) { ctx.moveTo(ex - view.spacing / 2, ey); started = true; } else ctx.lineTo(ex - view.spacing / 2, ey);
+      ctx.lineTo(ex + view.spacing / 2, ey);
+    }
+    ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
+    var lastE = trend.ema[trend.ema.length - 1];
+    if (lastE != null && y(lastE) > 10 && y(lastE) < ph - 10) {
+      ctx.fillStyle = C.gold; ctx.font = "11px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "left";
+      ctx.fillText(trend.source[trend.source.length - 1] + " EMA200", 8, y(lastE) - 8 < 30 ? y(lastE) + 10 : y(lastE) - 8);
+    }
+  }
+  // session bars along the bottom: London (blue) and New York (gold)
+  if (cfg.showSess) {
+    for (var q = i0; q <= i1; q++) {
+      var qt = bars[q].t, sx = xOf(q, n) - view.spacing / 2;
+      var inL = q < sessL.length ? sessL[q] : A.inLondon(qt), inN = q < sessN.length ? sessN[q] : A.inNewYork(qt);
+      if (inL) { ctx.fillStyle = C.accent; ctx.globalAlpha = 0.75; ctx.fillRect(sx, ph - 7, view.spacing + 0.5, 3); }
+      if (inN) { ctx.fillStyle = C.gold; ctx.globalAlpha = 0.75; ctx.fillRect(sx, ph - 3.5, view.spacing + 0.5, 3); }
+    }
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
   // last price line
   var lp = lastPrice != null ? lastPrice : bars[n - 1].c;
@@ -749,6 +975,7 @@ function draw() {
     }
   } else legend(bars[n - 1]);
   $("toLatest").style.display = view.offset > 3 ? "block" : "none";
+  $("sessKey").style.display = cfg.showSess ? "flex" : "none";
 }
 function axisTag(yy, text, bg, fg) {
   ctx.font = "11px ui-monospace,Menlo,Consolas,monospace";
@@ -808,13 +1035,20 @@ function renderHeader() {
   $("price").textContent = fp(p);
   var ref = bars[Math.max(0, bars.length - 25)].c, ch = p - ref;
   $("chg").innerHTML = "<span class='" + (ch >= 0 ? "up" : "down") + "'>" + (ch >= 0 ? "+" : "−") + Math.abs(ch).toFixed(2) + " (" + (ch >= 0 ? "+" : "−") + Math.abs(ch / ref * 100).toFixed(2) + "%)</span> <span class='muted'>24h</span>";
-  document.title = fp(p) + " · Aurum Gold Live";
+  document.title = (Date.now() < flashUntil ? "🔔 " + flashText + " · " : "") + fp(p) + " · Aurum Gold";
 }
+function renderClock() {
+  var now = Date.now(), el = $("clock");
+  if (!A.goldMarketOpen(now)) { var ro = nextMarketOpen(now); el.innerHTML = "market closed" + (ro ? " · opens in <b>" + fdur(ro - now) + "</b>" : ""); return; }
+  var left = Math.max(0, (Math.floor(now / H) + 1) * H - now), m = Math.floor(left / 60000), sec = Math.floor(left / 1000) % 60;
+  el.innerHTML = "candle closes in <b>" + m + ":" + String(sec).padStart(2, "0") + "</b>";
+}
+setInterval(renderClock, 1000);
 function tick() { computePreview(); renderHeader(); renderPanel(); dirty(); }
 function loop() { if (needDraw) draw(); requestAnimationFrame(loop); }
 setInterval(function () { if (result) { computePreview(); renderPanel(); } }, 20000);
 
-alertBtn(); resize(); renderTab(); loop(); start();
+alertBtn(); resize(); renderTab(); renderClock(); loop(); start();
 window.__aurum = { get result() { return result; }, get closed() { return closed; }, get forming() { return forming; }, cfg: cfg, view: view };
 })();
 </script>

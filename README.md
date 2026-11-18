@@ -37,7 +37,8 @@ On real XAUUSD data from 2012 to 2022, the default settings on the **1H chart** 
 - **Prices:** PAXG/USDT live from Binance (free, no key; a gold-backed token that follows spot gold within a few dollars; weekend candles are left out because spot gold is closed). For real **XAU/USD**, paste a free [Twelve Data](https://twelvedata.com) key in *Settings* (updates every 2 minutes).
 - **Same rules:** `docs/aurum.js` is a port of the reference model and gives the identical 239 signals on the 2012–2022 data (`python tradingview/tests/test_webapp.py`).
 - **WATCH** means a setup is forming on the live candle; it becomes BUY NOW / SELL NOW only if the candle closes that way.
-- **Alerts:** press 🔔 for a sound and a browser notification on every new signal (keep the tab open).
+- **Alerts:** press 🔔 for a sound and a browser notification on every new signal and when a trade hits its stop or target (keep the tab open).
+- **For trading:** match your broker's XAUUSD price once (Settings) so the plan shows your broker's prices; **📋 Copy plan** copies entry, SL, TP and lot; **Journal** tab to mark signals Took/Skipped with notes and export to CSV; candle-close countdown; record and equity curve after spread.
 - It never places trades.
 
 **Open it:** on Windows double-click `docs/start-webapp.bat`: it starts a small local server and opens **http://localhost:8080** (keep its window open; close it to stop). Or double-click `docs/index.html`, or publish it free with GitHub Pages: repository **Settings → Pages → Source: Deploy from a branch → Branch `main`, folder `/docs` → Save**. After a minute it is at `https://bunny-ecah.github.io/aurum-gold-indicator/` (the repository must be public for free Pages).

@@ -131,7 +131,7 @@
       ema = ema === null ? h4[i].c : ema + (h4[i].c - ema) * k;
       closes.push({ end: h4[i].end, c: h4[i].c, e: ema, n: i });
     }
-    var out = [], src = [], j = -1, cur = null, e1 = null;
+    var out = [], src = [], ema4 = [], j = -1, cur = null, curE = null, e1 = null;
     for (var n = 0; n < bars.length; n++) {
       var b = bars[n];
       e1 = e1 === null ? b.c : e1 + (b.c - e1) * k;
@@ -139,11 +139,12 @@
       while (j + 1 < closes.length && closes[j + 1].end <= decision) {
         j++;
         cur = closes[j].n >= 210 ? (closes[j].c > closes[j].e ? 1 : closes[j].c < closes[j].e ? -1 : 0) : null;
+        curE = closes[j].n >= 210 ? closes[j].e : null;
       }
-      if (cur !== null) { out.push(cur); src.push("4H"); }
-      else { out.push(n >= 200 ? (b.c > e1 ? 1 : b.c < e1 ? -1 : 0) : 0); src.push("1H"); }
+      if (cur !== null) { out.push(cur); src.push("4H"); ema4.push(curE); }
+      else { out.push(n >= 200 ? (b.c > e1 ? 1 : b.c < e1 ? -1 : 0) : 0); src.push("1H"); ema4.push(n >= 200 ? e1 : null); }
     }
-    return { dir: out, source: src };
+    return { dir: out, source: src, ema: ema4 };
   }
 
   /* run(bars, trend, settings, opts)
