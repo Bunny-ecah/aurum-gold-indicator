@@ -155,7 +155,7 @@ a{color:var(--accent2)}
     <div id="legend"></div>
     <button class="btn" id="toLatest">Latest ›</button>
     <div id="mstat"></div>
-    <div id="tfBar"><button class="btn" data-tf="15">15m</button><button class="btn" data-tf="60">1H</button><button class="btn" data-tf="240">4H</button><button class="btn" data-tf="1440">1D</button><button class="btn" id="alertModeBtn" title="Tap the chart to set a price alert">＋🔔</button></div>
+    <div id="tfBar"><button class="btn" data-tf="1">1m</button><button class="btn" data-tf="15">15m</button><button class="btn" data-tf="30">30m</button><button class="btn" data-tf="60">1H</button><button class="btn" data-tf="240">4H</button><button class="btn" data-tf="1440">1D</button><button class="btn" id="alertModeBtn" title="Tap the chart to set a price alert">＋🔔</button></div>
     <div id="tfNote">View only · signals come from 1H</div>
     <div id="sessKey"><span><i style="background:var(--accent)"></i>London</span><span><i style="background:var(--gold)"></i>New York</span></div>
     <div id="loading">Loading gold prices…</div>
@@ -921,9 +921,11 @@ window.addEventListener("resize", resize);
 function allBars() { return forming ? closed.concat([forming]) : closed; }
 
 // ---- timeframe views (signals always come from 1H) ----
-var TF = { "15": 15, "60": 60, "240": 240, "1440": 1440 };
+var TF = { "1": 1, "15": 15, "30": 30, "60": 60, "240": 240, "1440": 1440 };
+var FETCHED = { "1": { bin: "1m", td: "1min", poll: 3000 }, "15": { bin: "15m", td: "15min", poll: 10000 }, "30": { bin: "30m", td: "30min", poll: 15000 } };
 if (!TF[cfg.viewTf]) cfg.viewTf = "60";
-var m15 = { closed: [], forming: null, loaded: false, timer: null };
+var fetched = {}, fetchTimer = null;      // candles loaded for the 1m / 15m / 30m views
+function store(tf) { return fetched[tf] || (fetched[tf] = { closed: [], forming: null, loaded: false }); }
 var aggCache = { key: null, bars: null };
 function is1H() { return cfg.viewTf === "60"; }
 function aggregate(bars, tf) {
@@ -939,7 +941,7 @@ function aggregate(bars, tf) {
   return out;
 }
 function chartBars() {
-  if (cfg.viewTf === "15") return m15.forming ? m15.closed.concat([m15.forming]) : m15.closed;
+  if (FETCHED[cfg.viewTf]) { var st = store(cfg.viewTf); return st.forming ? st.closed.concat([st.forming]) : st.closed; }
   if (is1H()) return allBars();
   var src = allBars(), last = src[src.length - 1];
   var key = cfg.viewTf + ":" + src.length + ":" + (last ? last.c : 0);
@@ -947,42 +949,46 @@ function chartBars() {
   return aggCache.bars;
 }
 function chartHasForming() {
-  if (cfg.viewTf === "15") return !!m15.forming;
+  if (FETCHED[cfg.viewTf]) return !!store(cfg.viewTf).forming;
   if (is1H()) return !!forming;
   var b = chartBars(); return b.length && b[b.length - 1].t + TF[cfg.viewTf] * 60000 > Date.now();
 }
-function mergeM15(b) {
+function mergeFetched(st, b) {
   if (!A.goldMarketOpen(b.t)) return;
-  var last = m15.closed[m15.closed.length - 1];
+  var last = st.closed[st.closed.length - 1];
   if (b.final) {
-    if (last && b.t <= last.t) { if (b.t === last.t) m15.closed[m15.closed.length - 1] = strip(b); return; }
-    m15.closed.push(strip(b)); if (m15.forming && m15.forming.t <= b.t) m15.forming = null;
-  } else if (!last || b.t > last.t) m15.forming = strip(b);
+    if (last && b.t <= last.t) { if (b.t === last.t) st.closed[st.closed.length - 1] = strip(b); return; }
+    st.closed.push(strip(b)); if (st.forming && st.forming.t <= b.t) st.forming = null;
+    if (st.closed.length > 3000) st.closed.splice(0, st.closed.length - 3000);
+  } else if (!last || b.t > last.t) st.forming = strip(b);
 }
-function load15() {
-  var p;
+function loadFetched(tf) {
+  var f = FETCHED[tf], st = store(tf), p, mins = TF[tf];
+  // after a gap (sleep, hidden tab) ask for enough candles to fill it
+  var gap = st.closed.length ? Math.ceil((Date.now() - st.closed[st.closed.length - 1].t) / (mins * 60000)) + 2 : 1000;
+  var size = st.loaded ? Math.min(1000, Math.max(3, gap)) : 1000;
   if (cfg.source === "twelve" && cfg.tdKey) {
-    p = fetchJSON(tdUrl(m15.loaded ? 4 : 1000, "15min")).then(function (d) {
-      tdBars(d, 15).forEach(mergeM15);
-    });
+    p = fetchJSON(tdUrl(size, f.td)).then(function (d) { tdBars(d, mins).forEach(function (b) { mergeFetched(st, b); }); });
   } else {
-    p = binKlines(null, m15.loaded ? 3 : 1000, null, "15m").then(function (d) {
+    p = binKlines(null, size, null, f.bin).then(function (d) {
       var now = Date.now();
-      d.forEach(function (k) { mergeM15(binBar(k, now)); });
+      d.forEach(function (k) { mergeFetched(st, binBar(k, now)); });
     });
   }
-  return p.then(function () { m15.loaded = true; dirty(); }).catch(function (e) { toast("15m prices failed: " + e.message.slice(0, 40)); });
+  return p.then(function () { st.loaded = true; if (cfg.viewTf === tf) dirty(); })
+    .catch(function (e) { toast(f.bin + " prices failed: " + e.message.slice(0, 40)); });
 }
 function setTf(tf) {
   cfg.viewTf = tf; save();
   view.offset = 0; view.spacing = 9;
   document.querySelectorAll("#tfBar [data-tf]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-tf") === tf); });
-  clearInterval(m15.timer); m15.timer = null;
-  if (tf === "15") {
-    if (!m15.loaded) { m15.closed = []; m15.forming = null; }
-    load15();
-    m15.timer = setInterval(load15, cfg.source === "twelve" && cfg.tdKey ? 120000 : 10000);
+  clearInterval(fetchTimer); fetchTimer = null;
+  if (FETCHED[tf]) {
+    loadFetched(tf);
+    // Twelve Data's free plan allows ~800 requests a day, so the small timeframes refresh slowly with it
+    fetchTimer = setInterval(function () { loadFetched(tf); }, cfg.source === "twelve" && cfg.tdKey ? 180000 : FETCHED[tf].poll);
   }
+  $("tfNote").textContent = tf === "1" || tf === "15" || tf === "30" ? "View only · signals come from 1H (not tested for scalping)" : "View only · signals come from 1H";
   $("tfNote").style.display = is1H() ? "none" : "block";
   dirty();
 }
@@ -1085,7 +1091,7 @@ function draw() {
       ctx.fillText(new Date(bars[j].t + (tfMin === 1440 ? 7 * H : 0)).toLocaleDateString(undefined, { day: "numeric", month: "short" }), xx, ph + TX / 2);
     }
   } else {
-    var stepsMin = [15, 30, 60, 120, 180, 240, 360, 480, 720, 1440, 2880, 4320, 10080];
+    var stepsMin = [1, 5, 10, 15, 30, 60, 120, 180, 240, 360, 480, 720, 1440, 2880, 4320, 10080];
     var want = pxPer * tfMin, stepM = stepsMin.find(function (x) { return x >= want; }) || 10080;
     for (var j2 = i0; j2 <= i1; j2++) {
       var d = new Date(bars[j2].t), localMin = Math.floor((bars[j2].t - d.getTimezoneOffset() * 60000) / 60000);
