@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Aurum Gold Live</title>
 <meta name="description" content="Live gold 1H chart with the Aurum Gold supply/demand + support/resistance signals.">
+<meta name="theme-color" content="#0d2766">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aurum Gold">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6dff'/%3E%3Cpath d='M9 22 16 8l7 14z' fill='%23f7d77c'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -59,6 +66,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:0;height:calc(10
 #toLatest{position:absolute;right:76px;bottom:34px;display:none}
 #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px}
 aside{background:var(--panel);overflow:auto;display:flex;flex-direction:column}
+aside>*{flex-shrink:0}
 .card{margin:12px 12px 4px;border:1px solid var(--line);border-radius:14px;background:var(--panel2);overflow:hidden}
 .status{padding:14px 16px;margin:14px 12px 4px;border-radius:14px;border:1px solid var(--line);background:var(--card);position:relative;overflow:hidden}
 .status:before{content:"";position:absolute;left:0;top:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
@@ -76,7 +84,7 @@ aside{background:var(--panel);overflow:auto;display:flex;flex-direction:column}
 .last20{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end}
 .last20 span{width:9px;height:9px;border-radius:2px;background:var(--muted)}
 .last20 .w{background:var(--up)}.last20 .l{background:var(--down)}
-.tabs{display:flex;gap:6px;padding:12px 16px 0;border-top:1px solid var(--line);margin-top:auto}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px 16px 0;border-top:1px solid var(--line);margin-top:auto}
 .tabs .btn{font-size:12px;padding:5px 9px}
 #tabBody{padding:8px 16px 16px;font-size:12.5px}
 table{width:100%;border-collapse:collapse}
@@ -91,6 +99,15 @@ tr[data-bar]:hover td{background:var(--chip)}
 label.f input[type=checkbox]{width:16px;height:16px}
 .note{color:var(--muted);font-size:12px;margin:8px 0}
 .foot{padding:10px 16px 14px;color:var(--muted);font-size:11.5px;border-top:1px solid var(--line)}
+#tfBar{position:absolute;right:76px;top:6px;display:flex;gap:4px;z-index:2}
+#tfBar .btn{padding:3px 8px;font-size:12px;border-radius:7px}
+#tfNote{position:absolute;right:76px;top:36px;display:none;font-size:11px;color:var(--muted);pointer-events:none}
+.limit{color:var(--warn);font-weight:700}
+.status.limit{border-color:var(--warn)}.status.limit:before{background:var(--warn)}
+.prog{display:inline-block;width:90px;height:7px;border-radius:4px;background:var(--chip);overflow:hidden;vertical-align:middle;margin-right:6px}
+.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.newsrow.warn .v{color:var(--warn);font-weight:600}
+#installBtn{display:none}
 #mstat{position:absolute;right:76px;top:8px;display:none;padding:5px 10px;border-radius:10px;font-weight:800;font-size:13px;letter-spacing:.04em;background:var(--chip);border:1px solid var(--line);pointer-events:none}
 #mstat.buy{color:var(--up);border-color:var(--up)}#mstat.sell{color:var(--down);border-color:var(--down)}#mstat.wait{color:var(--accent2)}
 #mstat small{font-weight:600;color:var(--muted);margin-left:6px}
@@ -110,6 +127,7 @@ label.f input[type=checkbox]{width:16px;height:16px}
 a{color:var(--accent2)}
 @media (max-width:860px){
   #mstat{display:block;top:30px;left:12px;right:auto}
+  #tfBar{top:28px;right:70px}#tfNote{top:56px;right:70px}
   .clock{display:none}
   main{grid-template-columns:1fr;height:auto}
   #chartWrap{height:62vh;border-right:0;border-bottom:1px solid var(--line)}
@@ -128,6 +146,7 @@ a{color:var(--accent2)}
   <div class="clock num" id="clock"></div>
   <div class="spacer"></div>
   <button class="btn" id="alertBtn" title="Browser notification + sound on every new signal">🔔 Alerts off</button>
+  <button class="btn" id="installBtn" title="Install as an app">⬇ Install app</button>
   <button class="btn" id="themeBtn" title="Light / dark">Theme</button>
 </header>
 <main>
@@ -136,6 +155,8 @@ a{color:var(--accent2)}
     <div id="legend"></div>
     <button class="btn" id="toLatest">Latest ›</button>
     <div id="mstat"></div>
+    <div id="tfBar"><button class="btn" data-tf="15">15m</button><button class="btn" data-tf="60">1H</button><button class="btn" data-tf="240">4H</button><button class="btn" data-tf="1440">1D</button><button class="btn" id="alertModeBtn" title="Tap the chart to set a price alert">＋🔔</button></div>
+    <div id="tfNote">View only · signals come from 1H</div>
     <div id="sessKey"><span><i style="background:var(--accent)"></i>London</span><span><i style="background:var(--gold)"></i>New York</span></div>
     <div id="loading">Loading gold prices…</div>
   </div>
@@ -148,6 +169,7 @@ a{color:var(--accent2)}
     <div class="tabs">
       <button class="btn on" data-tab="trades">Trades</button>
       <button class="btn" data-tab="journal">Journal</button>
+      <button class="btn" data-tab="alerts">Alerts</button>
       <button class="btn" data-tab="settings">Settings</button>
       <button class="btn" data-tab="about">About</button>
     </div>
@@ -167,7 +189,7 @@ var H = 3600000;
 // ---------------- settings ----------------
 var SKEY = "aurum.web.settings.v1";
 var cfg = Object.assign({}, A.DEFAULTS, { source: "paxg", tdKey: "", showAll: false, showPast: true, alerts: false, theme: "",
-  spread: 0.30, brokerOff: 0, brokerAt: 0, showEMA: true, showSess: true });
+  spread: 0.30, brokerOff: 0, brokerAt: 0, showEMA: true, showSess: true, viewTf: "60", showNews: true, maxLosses: 2, demoStart: 0 });
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(SKEY) || "{}")); } catch (e) {}
 function save() { try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch (e) {} }
 if (cfg.theme) document.documentElement.setAttribute("data-theme", cfg.theme);
@@ -190,13 +212,53 @@ function f2(x) { return x == null || isNaN(x) ? "—" : (x + off()).toFixed(2); 
 function net(s) { return s.result == null ? null : s.result - (+cfg.spread || 0) / Math.abs(s.entry - s.sl); }
 function netSignals() { return result.signals.map(function (s) { return Object.assign({}, s, { result: net(s) }); }); }
 function toast(msg) { var t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(function () { t.classList.remove("show"); }, 2200); }
-function fdur(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + " min"; }
+function fdur(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m >= 2880 ? Math.floor(m / 1440) + "d " + Math.floor(m % 1440 / 60) + "h" : m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + " min"; }
 function nextMarketOpen(ms) { var t = Math.ceil(ms / H) * H; for (var i = 0; i < 24 * 8; i++, t += H) if (A.goldMarketOpen(t)) return t; return null; }
 function fr(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "R"; }
 function pct(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "%"; }
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 var dtf = new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
 function fdt(ms) { return dtf.format(new Date(ms)); }
+
+// ---------------- news (high-impact USD events) ----------------
+var news = [];
+var NEWS_URLS = ["news.json", "https://raw.githubusercontent.com/Bunny-ecah/aurum-gold-indicator/main/docs/news.json"];
+function nfpDates(fromMs) {      // US jobs report: first Friday of the month, 08:30 New York (fallback when no calendar)
+  var out = [], d = new Date(fromMs);
+  for (var k = -1; k < 3; k++) {
+    var y = d.getUTCFullYear(), m = d.getUTCMonth() + k, day = 1;
+    var first = new Date(Date.UTC(y, m, 1));
+    while (first.getUTCDay() !== 5) { first = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), ++day)); }
+    // 08:30 New York = 12:30 or 13:30 UTC depending on summer time
+    var guess = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), first.getUTCDate(), 13, 30);
+    if (A.localParts(guess, "America/New_York").h === 9) guess -= H;
+    out.push({ t: guess, title: "Non-Farm Payrolls (est.)", est: true });
+  }
+  return out;
+}
+function setNews(list) {
+  var now = Date.now(), have = list.slice();
+  nfpDates(now).forEach(function (f) {
+    if (!have.some(function (e) { return Math.abs(e.t - f.t) < 6 * H && /payroll|NFP|employment change/i.test(e.title); })) have.push(f);
+  });
+  news = have.filter(function (e) { return e.t > now - 14 * 864e5 && e.t < now + 35 * 864e5; }).sort(function (a, b) { return a.t - b.t; });
+  dirty(); if (result) renderPanel();
+}
+function loadNews() {
+  function attempt(k) {
+    if (k >= NEWS_URLS.length) { setNews([]); return; }
+    fetchJSON(NEWS_URLS[k] + (NEWS_URLS[k].indexOf("http") === 0 ? "?t=" + Math.floor(Date.now() / 36e5) : "")).then(function (d) {
+      if (!d || !Array.isArray(d.events)) throw new Error("bad");
+      setNews(d.events.map(function (e) { return { t: +e.t, title: String(e.title) }; }).filter(function (e) { return e.t > 0; }));
+    }).catch(function () { attempt(k + 1); });
+  }
+  attempt(0);
+}
+function shortNews(t) {
+  return t.replace(/\(est\.\)/, "").replace(/Non-Farm (Employment Change|Payrolls)/i, "NFP").replace(/Federal Funds Rate|FOMC Statement/i, "FED").replace(/ m\/m| y\/y/g, "").trim().slice(0, 18);
+}
+function newsNear(ms, before, after) { return news.filter(function (e) { return ms >= e.t - before && ms <= e.t + after; }); }
+setInterval(loadNews, 6 * 36e5);
 
 // ---------------- engine ----------------
 function compute() {
@@ -318,8 +380,8 @@ function fetchJSON(url) {
     return r.json();
   });
 }
-function binKlines(endTime, limit, startTime) {
-  var q = "/api/v3/klines?symbol=PAXGUSDT&interval=1h&limit=" + (limit || 1000) + (endTime ? "&endTime=" + endTime : "") + (startTime ? "&startTime=" + startTime : "");
+function binKlines(endTime, limit, startTime, interval) {
+  var q = "/api/v3/klines?symbol=PAXGUSDT&interval=" + (interval || "1h") + "&limit=" + (limit || 1000) + (endTime ? "&endTime=" + endTime : "") + (startTime ? "&startTime=" + startTime : "");
   var tries = restBase ? [restBase] : BIN_REST.slice();
   function attempt(k) {
     return fetchJSON(tries[k] + q).then(function (d) { restBase = tries[k]; return d; }, function (e) {
@@ -395,23 +457,24 @@ document.addEventListener("visibilitychange", function () { if (!document.hidden
 window.addEventListener("online", function () { if (booted) refresh(); });
 
 // Twelve Data: real XAU/USD with the viewer's own free API key (polled every 2 minutes).
-function tdUrl(size) {
-  return "https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1h&timezone=UTC&order=ASC&outputsize=" + size + "&apikey=" + encodeURIComponent(cfg.tdKey);
+function tdUrl(size, interval) {
+  return "https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=" + (interval || "1h") + "&timezone=UTC&order=ASC&outputsize=" + size + "&apikey=" + encodeURIComponent(cfg.tdKey);
 }
-function tdBars(d) {
+function tdBars(d, minutes) {
+  var span = (minutes || 60) * 60000;
   if (d.status === "error" || !d.values) throw new Error(d.message || "Twelve Data error");
   var now = Date.now();
   return d.values.map(function (v) {
     var p = v.datetime.split(/[- :]/).map(Number);
     var t = Date.UTC(p[0], p[1] - 1, p[2], p[3] || 0, p[4] || 0);
-    return { t: t, o: +v.open, h: +v.high, l: +v.low, c: +v.close, final: t + H <= now };
+    return { t: t, o: +v.open, h: +v.high, l: +v.low, c: +v.close, final: t + span <= now };
   });
 }
 function loadTwelve() {
   $("sym").textContent = "XAU/USD · 1H (Twelve Data)";
   return fetchJSON(tdUrl(5000)).then(function (d) {
     closed = []; forming = null;
-    tdBars(d).forEach(mergeBar);
+    tdBars(d).forEach(function (b) { mergeBar(b); });
     setLive("on", "updates every 2 min");
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(pollTwelve, 120000);
@@ -522,6 +585,25 @@ function sparkline(vals) {
     "<polygon points='0," + Y(0) + " " + pts + " " + w + "," + Y(0) + "' fill='" + col + "' opacity='.12'/>" +
     "<polyline points='" + pts + "' fill='none' stroke='" + col + "' stroke-width='1.6' vector-effect='non-scaling-stroke'/></svg>";
 }
+function todayStats() {      // trades closed today (your local day), after spread
+  var d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  var w = 0, l = 0, r = 0;
+  result.signals.forEach(function (s) {
+    if (s.exitBar == null) return;
+    var t = closed[s.exitBar].t + H;
+    if (t < d0.getTime()) return;
+    var x = net(s); r += x; if (x > 0) w++; else l++;
+  });
+  return { wins: w, losses: l, r: r, limit: cfg.maxLosses > 0 && l >= cfg.maxLosses };
+}
+function newsRow(nowMs) {
+  var upcoming = news.filter(function (e) { return e.t > nowMs - 30 * 60000; });
+  if (!upcoming.length) return row("NEWS", "<span class='muted'>no big USD news in the calendar</span>");
+  var e = upcoming[0], dt = e.t - nowMs, soon = dt < 60 * 60000;
+  var when = dt > 0 ? "in " + fdur(dt) : "released " + fdur(-dt) + " ago";
+  return '<div class="row newsrow' + (soon ? " warn" : "") + '"><span class="k">NEWS</span><span class="v">' + (soon ? "⚠ " : "") + esc(e.title) +
+    " · " + fdt(e.t) + " <span class='muted'>(" + when + ")</span>" + (soon ? "<br><span class='warn'>Big moves likely — careful with new trades</span>" : "") + "</span></div>";
+}
 var actionSig = null;
 function renderPanel() {
   if (!result) return;
@@ -543,6 +625,11 @@ function renderPanel() {
     (emaNow != null ? " <span class='num'>" + fp(emaNow) + "</span>, $" + Math.abs(price - emaNow).toFixed(0) + (price >= emaNow ? " below" : " above") : "") + ")</span>");
   var ss = sessionText(nowMs);
   h += row("SESSION", "<span class='" + ss[1] + "'>" + ss[0] + "</span>" + (cfg.sessions !== "All day" ? " <span class='muted'>· trading " + cfg.sessions + "</span>" : ""));
+  h += newsRow(nowMs);
+  var td = todayStats();
+  if (td.wins + td.losses > 0 || td.limit)
+    h += row("TODAY", (td.limit ? "<span class='limit'>⛔ Daily limit: " + td.losses + (td.losses === 1 ? " loss" : " losses") + " — stop for today</span>" :
+      "<span class='num'>" + td.wins + "W " + td.losses + "L · <span class='" + (td.r >= 0 ? "up" : "down") + "'>" + fr(td.r) + "</span></span> <span class='muted'>(limit " + cfg.maxLosses + " losses)</span>"));
   actionSig = null;
   if (open) {
     var side = open.side > 0 ? "BUY" : "SELL";
@@ -552,6 +639,8 @@ function renderPanel() {
     var live = (price - open.entry) / Math.abs(open.entry - open.sl) * open.side;
     h += planRows(open, justNow ? null : live);
     actionSig = open; mst = [big.textContent, open.side > 0 ? "buy" : "sell"];
+    if (justNow && td.limit) { box.classList.add("limit"); sub.textContent = "⛔ Daily loss limit reached — the plan says skip this one. " + sub.textContent; }
+    if (justNow && newsNear(nowMs, 60 * 60000, 30 * 60000).length) sub.textContent = "⚠ Big news within the hour. " + sub.textContent;
   } else if (!marketOpen) {
     var reopen = nextMarketOpen(nowMs);
     big.textContent = "MARKET CLOSED";
@@ -562,6 +651,7 @@ function renderPanel() {
     sub.textContent = "A " + (preview.side > 0 ? "buy" : "sell") + " setup is forming. Confirmed only if the candle closes like this, in " + mins + ". Do not enter yet.";
     h += planRows(preview, null);
     mst = [big.textContent, "wait"];
+    if (td.limit) { box.classList.add("limit"); sub.textContent = "⛔ Daily loss limit reached. " + sub.textContent; }
   } else {
     big.textContent = "WAIT";
     sub.textContent = "No trade now · candle closes in " + mins;
@@ -623,6 +713,13 @@ function renderPanel() {
     }).join(" · "));
     var done = ns.filter(function (s) { return s.result != null; }).slice(-20);
     r += row("LAST 20", "<span class='last20'>" + done.map(function (s) { return "<span class='" + (s.result > 0 ? "w" : "l") + "' title='" + fr(s.result) + "'></span>"; }).join("") + "</span>");
+  }
+  if (cfg.demoStart) {
+    var dm = A.record(ns, function (s) { return s.t + H >= cfg.demoStart; });
+    var prog = Math.min(20, dm.n);
+    r += row("DEMO SINCE " + new Date(cfg.demoStart).toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase(),
+      "<span class='prog'><i style='width:" + (prog / 20 * 100) + "%'></i></span><span class='num'>" + dm.n + "/20</span>" +
+      (dm.n ? " · win <span class='num'>" + dm.winPct.toFixed(0) + "%</span> · <span class='num " + (dm.total >= 0 ? "up" : "down") + "'>" + fr(dm.total) + "</span>" : ""));
   }
   var st = result.stats;
   var blocked = [["trend", st.trend], ["weak area", st.weak], ["session", st.session], ["target too close", st.target], ["trade open", st.busy]]
@@ -695,6 +792,8 @@ function renderTab() {
     var took = result.signals.filter(function (s) { var j = journal[sigKey(s)]; return j && j.a === "Took" && s.result != null; });
     var tr = took.reduce(function (a, s) { return a + net(s); }, 0);
     h += "<p class='note'>Mark every signal you took or skipped on your demo account (the demo plan needs 20 trades). Saved in this browser.</p>";
+    h += '<label class="f">Demo started on<input type="date" id="demoDate" value="' + (cfg.demoStart ? new Date(cfg.demoStart - new Date(cfg.demoStart).getTimezoneOffset() * 60000).toISOString().slice(0, 10) : "") + '"></label>';
+    h += "<p class='note' style='margin-top:0'>" + (cfg.demoStart ? "The Record shows your progress to 20 trades since this date." : "<button class='btn' id='demoToday'>Start my demo today</button> — then the Record counts signals from today.") + "</p>";
     h += row("YOUR TRADES", took.length ? "<span class='num'>" + took.length + "</span> closed · <span class='num " + (tr >= 0 ? "up" : "down") + "'>" + fr(tr) + "</span>" : "none marked yet");
     h += "<table style='margin-top:6px'><tr><th>Signal</th><th>Side</th><th>Result</th><th>Me</th></tr>";
     result.signals.slice().reverse().slice(0, 40).forEach(function (s) {
@@ -713,6 +812,27 @@ function renderTab() {
       c.onchange = function () { var k = c.getAttribute("data-n"); journal[k] = Object.assign({}, journal[k], { n: c.value }); saveJournal(); };
     });
     $("csvBtn").onclick = exportCSV;
+    $("demoDate").onchange = function () { var v = $("demoDate").value; cfg.demoStart = v ? new Date(v + "T00:00:00").getTime() : 0; save(); renderPanel(); renderTab(); };
+    var dt = $("demoToday"); if (dt) dt.onclick = function () { var d = new Date(); d.setHours(0, 0, 0, 0); cfg.demoStart = d.getTime(); save(); renderPanel(); renderTab(); toast("Demo started today"); };
+  } else if (tab === "alerts") {
+    h += "<p class='note'>Get a sound + notification when gold reaches a price (keep this page open). Tap <b>＋🔔</b> on the chart and then the price, or type it here.</p>";
+    h += '<label class="f">Alert at price<input type="number" step="0.01" id="alertInp" placeholder="' + f2(lastPrice || 0) + '"></label>';
+    h += "<p class='note'><button class='btn primary' id='alertAdd'>Add alert</button></p>";
+    if (!alerts.length) h += "<p class='note'>No price alerts.</p>";
+    else {
+      h += "<table><tr><th>Price</th><th>When</th><th>Distance</th><th></th></tr>";
+      alerts.slice().sort(function (a, b) { return b.p - a.p; }).forEach(function (a) {
+        var dist = shownPrice() == null ? "" : "$" + Math.abs(a.p - shownPrice()).toFixed(2);
+        h += "<tr><td class='num'>" + a.p.toFixed(2) + "</td><td>" + (a.dir > 0 ? "rises to" : "falls to") + "</td><td class='num muted'>" + dist +
+          "</td><td><button class='btn' data-del='" + a.id + "' style='padding:2px 7px'>✕</button></td></tr>";
+      });
+      h += "</table>";
+    }
+    el.innerHTML = h;
+    $("alertAdd").onclick = function () { addAlert(parseFloat($("alertInp").value)); };
+    el.querySelectorAll("[data-del]").forEach(function (b) {
+      b.onclick = function () { var id = +b.getAttribute("data-del"); alerts = alerts.filter(function (a) { return a.id !== id; }); saveAlerts(); renderTab(); dirty(); };
+    });
   } else if (tab === "settings") {
     h += "<div class='sec' style='padding-left:0'>Prices</div>";
     h += sel("source", "Data", [["paxg", "PAXG live (free)"], ["twelve", "XAU/USD (Twelve Data key)"]]);
@@ -732,11 +852,13 @@ function renderTab() {
     h += "<div class='sec' style='padding-left:0'>Risk</div>";
     h += inp("balance", "Balance ($)", "100");
     h += inp("riskPct", "Risk per trade (%)", "0.1");
+    h += inp("maxLosses", "Daily limit: stop after N losses (0 = off)", "1", true);
     h += "<div class='sec' style='padding-left:0'>Chart</div>";
     h += chk("showAll", "Show all zones and levels");
     h += chk("showPast", "Show past trades");
     h += chk("showEMA", "Show 4H EMA200 (trend line)");
     h += chk("showSess", "Show London / New York sessions");
+    h += chk("showNews", "Show big USD news on the chart");
     h += "<p class='note'>Tested defaults: Balanced · Large · All day · reward 1.2 · buffer 0.5 (see BACKTEST-RESULTS.md). <button class='btn' id='resetBtn'>Reset to tested defaults</button></p>";
     el.innerHTML = h;
     el.querySelectorAll("[data-k]").forEach(function (c) {
@@ -779,13 +901,12 @@ var cv = $("chart"), ctx = cv.getContext("2d");
 var C = {};
 function readColors() {
   var s = getComputedStyle(document.documentElement);
-  ["bg", "panel", "chart", "accent", "accent2", "line", "text", "muted", "grid", "gold", "up", "down", "upbg", "downbg", "demand", "supply", "candle-up", "candle-down"].forEach(function (k) {
+  ["bg", "panel", "chart", "accent", "accent2", "line", "text", "muted", "grid", "gold", "up", "down", "upbg", "downbg", "demand", "supply", "candle-up", "candle-down", "warn"].forEach(function (k) {
     C[k] = s.getPropertyValue("--" + k).trim();
   });
 }
 readColors();
-if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { readColors(); dirty(); });
-var view = { spacing: 9, offset: 0, mouse: null };
+var view = { spacing: 9, offset: 0, mouse: null, scale: null };
 var AX = 66, TX = 24, PADR = 6;
 var W = 0, Ht = 0, needDraw = true;
 function dirty() { needDraw = true; }
@@ -798,17 +919,141 @@ function resize() {
 }
 window.addEventListener("resize", resize);
 function allBars() { return forming ? closed.concat([forming]) : closed; }
+
+// ---- timeframe views (signals always come from 1H) ----
+var TF = { "15": 15, "60": 60, "240": 240, "1440": 1440 };
+if (!TF[cfg.viewTf]) cfg.viewTf = "60";
+var m15 = { closed: [], forming: null, loaded: false, timer: null };
+var aggCache = { key: null, bars: null };
+function is1H() { return cfg.viewTf === "60"; }
+function aggregate(bars, tf) {
+  // 4H: broker clock (4H boundaries at 17:00, 21:00 ... New York); 1D: gold day starting 17:00 New York
+  var out = [], cur = null;
+  for (var i = 0; i < bars.length; i++) {
+    var b = bars[i], p = A.localParts(b.t, "America/New_York");
+    var hrsIntoBlock = tf === 240 ? (p.h + 7) % 4 : (p.h + 7) % 24;
+    var key = b.t - hrsIntoBlock * H - p.mi * 60000;
+    if (!cur || cur.t !== key) { cur = { t: key, o: b.o, h: b.h, l: b.l, c: b.c }; out.push(cur); }
+    else { cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; }
+  }
+  return out;
+}
+function chartBars() {
+  if (cfg.viewTf === "15") return m15.forming ? m15.closed.concat([m15.forming]) : m15.closed;
+  if (is1H()) return allBars();
+  var src = allBars(), last = src[src.length - 1];
+  var key = cfg.viewTf + ":" + src.length + ":" + (last ? last.c : 0);
+  if (aggCache.key !== key) { aggCache.key = key; aggCache.bars = aggregate(src, TF[cfg.viewTf]); }
+  return aggCache.bars;
+}
+function chartHasForming() {
+  if (cfg.viewTf === "15") return !!m15.forming;
+  if (is1H()) return !!forming;
+  var b = chartBars(); return b.length && b[b.length - 1].t + TF[cfg.viewTf] * 60000 > Date.now();
+}
+function mergeM15(b) {
+  if (!A.goldMarketOpen(b.t)) return;
+  var last = m15.closed[m15.closed.length - 1];
+  if (b.final) {
+    if (last && b.t <= last.t) { if (b.t === last.t) m15.closed[m15.closed.length - 1] = strip(b); return; }
+    m15.closed.push(strip(b)); if (m15.forming && m15.forming.t <= b.t) m15.forming = null;
+  } else if (!last || b.t > last.t) m15.forming = strip(b);
+}
+function load15() {
+  var p;
+  if (cfg.source === "twelve" && cfg.tdKey) {
+    p = fetchJSON(tdUrl(m15.loaded ? 4 : 1000, "15min")).then(function (d) {
+      tdBars(d, 15).forEach(mergeM15);
+    });
+  } else {
+    p = binKlines(null, m15.loaded ? 3 : 1000, null, "15m").then(function (d) {
+      var now = Date.now();
+      d.forEach(function (k) { mergeM15(binBar(k, now)); });
+    });
+  }
+  return p.then(function () { m15.loaded = true; dirty(); }).catch(function (e) { toast("15m prices failed: " + e.message.slice(0, 40)); });
+}
+function setTf(tf) {
+  cfg.viewTf = tf; save();
+  view.offset = 0; view.spacing = 9;
+  document.querySelectorAll("#tfBar [data-tf]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-tf") === tf); });
+  clearInterval(m15.timer); m15.timer = null;
+  if (tf === "15") {
+    if (!m15.loaded) { m15.closed = []; m15.forming = null; }
+    load15();
+    m15.timer = setInterval(load15, cfg.source === "twelve" && cfg.tdKey ? 120000 : 10000);
+  }
+  $("tfNote").style.display = is1H() ? "none" : "block";
+  dirty();
+}
+document.querySelectorAll("#tfBar [data-tf]").forEach(function (b) { b.onclick = function () { setTf(b.getAttribute("data-tf")); }; });
+
+// ---- price alerts (stored in the prices you see, i.e. broker-matched) ----
+var AKEY = "aurum.web.alerts.v1", alerts = [], alertMode = false;
+try { alerts = JSON.parse(localStorage.getItem(AKEY) || "[]"); } catch (e) {}
+function saveAlerts() { try { localStorage.setItem(AKEY, JSON.stringify(alerts)); } catch (e) {} }
+function shownPrice() { return lastPrice == null ? null : lastPrice + off(); }
+function addAlert(price) {
+  var now = shownPrice(); if (now == null || !(price > 0)) return;
+  price = Math.round(price * 100) / 100;
+  alerts.push({ id: Date.now() + Math.random(), p: price, dir: price >= now ? 1 : -1 });
+  saveAlerts(); toast("Alert set at " + price.toFixed(2) + (price >= now ? " (above)" : " (below)"));
+  if (tab === "alerts") renderTab();
+  dirty();
+}
+function checkAlerts() {
+  var now = shownPrice(); if (now == null || !alerts.length) return;
+  var fired = alerts.filter(function (a) { return a.dir > 0 ? now >= a.p : now <= a.p; });
+  if (!fired.length) return;
+  alerts = alerts.filter(function (a) { return fired.indexOf(a) < 0; });
+  saveAlerts();
+  fired.forEach(function (a) {
+    var msg = "Gold reached " + a.p.toFixed(2) + " (now " + now.toFixed(2) + ")";
+    toast("🔔 " + msg); beep(); flashTitle("PRICE " + a.p.toFixed(2));
+    try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum price alert", { body: msg }); } catch (e) {}
+  });
+  if (tab === "alerts") renderTab();
+  dirty();
+}
+$("alertModeBtn").onclick = function () {
+  alertMode = !alertMode;
+  $("alertModeBtn").classList.toggle("on", alertMode);
+  cv.style.cursor = alertMode ? "copy" : "crosshair";
+  if (alertMode) toast("Tap the chart at the price for the alert");
+};
+
+// ---- helpers ----
 function xOf(i, n) { return (W - AX) - (n - 1 - i - view.offset + PADR) * view.spacing; }
 function iOf(x, n) { return n - 1 - view.offset + PADR - ((W - AX) - x) / view.spacing; }
+function xOfTime(t, bars) {      // x for a time, also in the future (right of the last candle)
+  var n = bars.length, tfMs = TF[cfg.viewTf] * 60000;
+  if (!n) return null;
+  var lastT = bars[n - 1].t;
+  if (t >= lastT) return xOf(n - 1, n) + (t - lastT) / tfMs * view.spacing - view.spacing / 2;
+  var lo = 0, hi = n - 1;
+  while (lo < hi) { var mid = (lo + hi + 1) >> 1; if (bars[mid].t <= t) lo = mid; else hi = mid - 1; }
+  return xOf(lo, n) - view.spacing / 2 + Math.min(1, (t - bars[lo].t) / tfMs) * view.spacing;
+}
 function niceStep(range, target) {
   var raw = range / target, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
   return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
 }
+var sessMemo = {};
+function sessAt(t) {
+  var v = sessMemo[t];
+  if (v === undefined) { v = (A.inLondon(t) ? 1 : 0) + (A.inNewYork(t) ? 2 : 0); sessMemo[t] = v; }
+  return v;
+}
+function emaSeries(bars, len) {
+  var k = 2 / (len + 1), e = null;
+  return bars.map(function (b, i) { e = e === null ? b.c : e + (b.c - e) * k; return i >= len ? e : null; });
+}
+
 function draw() {
   needDraw = false;
-  var bars = allBars(), n = bars.length;
+  var bars = chartBars(), n = bars.length, tfMin = TF[cfg.viewTf];
   ctx.fillStyle = C.chart; ctx.fillRect(0, 0, W, Ht);
-  if (!n) return;
+  if (!n) { view.scale = null; return; }
   var pw = W - AX, ph = Ht - TX;
   var i0 = Math.max(0, Math.floor(iOf(0, n))), i1 = Math.min(n - 1, Math.ceil(iOf(pw, n)));
   if (i1 < i0) return;
@@ -816,10 +1061,11 @@ function draw() {
   for (var i = i0; i <= i1; i++) { hi = Math.max(hi, bars[i].h); lo = Math.min(lo, bars[i].l); }
   var open = result && result.open;
   var shown = open || preview;
-  if (shown && shown.bar <= i1 + 1) { hi = Math.max(hi, shown.sl, shown.tp); lo = Math.min(lo, shown.sl, shown.tp); }
+  if (shown && view.offset < 3) { hi = Math.max(hi, shown.sl, shown.tp); lo = Math.min(lo, shown.sl, shown.tp); }
   var pad = (hi - lo) * 0.08 || 1; hi += pad; lo -= pad;
   function y(p) { return 8 + (hi - p) / (hi - lo) * (ph - 16); }
   function pOf(yy) { return hi - (yy - 8) / (ph - 16) * (hi - lo); }
+  view.scale = { pOf: pOf, pw: pw, ph: ph };
   // grid + price axis
   var step = niceStep(hi - lo, Math.max(3, ph / 60));
   ctx.font = "11px ui-monospace,Menlo,Consolas,monospace"; ctx.textBaseline = "middle";
@@ -829,31 +1075,50 @@ function draw() {
     ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.fillText(fp(p), pw + 6, yy);
   }
   // time axis
-  var every = Math.max(1, Math.ceil(90 / view.spacing));
-  var hrs = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168, 336, 720]; every = hrs.find(function (x) { return x >= every; }) || every;
   ctx.textAlign = "center"; ctx.fillStyle = C.muted;
-  var lastDay = null;
-  for (var j = i0; j <= i1; j++) {
-    var d = new Date(bars[j].t);
-    var dayIdx = Math.floor((bars[j].t - d.getTimezoneOffset() * 60000) / 864e5);
-    if (every < 24 ? d.getHours() % every !== 0 : (d.getHours() !== 0 || dayIdx % (every / 24) !== 0)) continue;
-    var xx = Math.round(xOf(j, n)) + 0.5;
-    ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(xx, 0); ctx.lineTo(xx, ph); ctx.stroke();
-    var lab = every >= 24 || d.getHours() === 0 || lastDay === null
-      ? d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
-      : String(d.getHours()).padStart(2, "0") + ":00";
-    lastDay = d.getDate();
-    ctx.fillText(lab, xx, ph + TX / 2);
+  var pxPer = Math.ceil(90 / view.spacing);
+  if (tfMin >= 240) {
+    for (var j = i0; j <= i1; j++) {
+      if (j % pxPer !== 0) continue;
+      var xx = Math.round(xOf(j, n)) + 0.5;
+      ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(xx, 0); ctx.lineTo(xx, ph); ctx.stroke();
+      ctx.fillText(new Date(bars[j].t + (tfMin === 1440 ? 7 * H : 0)).toLocaleDateString(undefined, { day: "numeric", month: "short" }), xx, ph + TX / 2);
+    }
+  } else {
+    var stepsMin = [15, 30, 60, 120, 180, 240, 360, 480, 720, 1440, 2880, 4320, 10080];
+    var want = pxPer * tfMin, stepM = stepsMin.find(function (x) { return x >= want; }) || 10080;
+    for (var j2 = i0; j2 <= i1; j2++) {
+      var d = new Date(bars[j2].t), localMin = Math.floor((bars[j2].t - d.getTimezoneOffset() * 60000) / 60000);
+      if (stepM < 1440 ? localMin % stepM !== 0 : (localMin % 1440 !== 0 || Math.floor(localMin / 1440) % (stepM / 1440) !== 0)) continue;
+      var x2 = Math.round(xOf(j2, n)) + 0.5;
+      ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, ph); ctx.stroke();
+      var lab = stepM >= 1440 || localMin % 1440 === 0 ? d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+        : String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      ctx.fillText(lab, x2, ph + TX / 2);
+    }
   }
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, pw, ph); ctx.clip();
-  // zones + levels
+  // news (vertical lines, including upcoming ones on the right)
+  if (cfg.showNews) {
+    news.forEach(function (ev) {
+      var nx = xOfTime(ev.t, bars);
+      if (nx == null || nx < 0 || nx > pw) return;
+      ctx.strokeStyle = C.warn; ctx.globalAlpha = 0.6; ctx.setLineDash([2, 4]);
+      ctx.beginPath(); ctx.moveTo(Math.round(nx) + 0.5, 60); ctx.lineTo(Math.round(nx) + 0.5, ph - 26); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.fillStyle = C.warn; ctx.font = "600 10.5px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("⚑ " + shortNews(ev.title), nx, ph - 18);
+    });
+  }
+  // zones + levels (they are 1H areas; on other timeframes they are drawn across)
   if (result) {
     var price = lastPrice || closed[closed.length - 1].c;
     var na = nearestAreas(price);
+    var map1H = function (bar) { return is1H() ? Math.max(0, xOf(bar, n) - view.spacing / 2) : 0; };
     var zs = cfg.showAll ? result.demand.map(function (z) { return [z, 1]; }).concat(result.supply.map(function (z) { return [z, -1]; }))
       : [[na.dz, 1], [na.sz, -1]].filter(function (x) { return x[0]; });
     zs.forEach(function (x) {
-      var z = x[0], x0 = Math.max(0, xOf(z.bar, n) - view.spacing / 2);
+      var z = x[0], x0 = map1H(z.bar);
       ctx.fillStyle = x[1] > 0 ? C.demand : C.supply;
       ctx.fillRect(x0, y(z.top), pw - x0, y(z.bot) - y(z.top));
       ctx.fillStyle = x[1] > 0 ? C.up : C.down; ctx.textAlign = "right"; ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
@@ -863,89 +1128,108 @@ function draw() {
       : [[na.sp, 1], [na.rs, -1]].filter(function (x) { return x[0]; });
     ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
     ls.forEach(function (x) {
-      var l = x[0], yy = Math.round(y(l.p)) + 0.5, x0 = Math.max(0, xOf(l.bar, n));
+      var l = x[0], yy = Math.round(y(l.p)) + 0.5, x0 = map1H(l.bar);
       ctx.strokeStyle = x[1] > 0 ? C.up : C.down;
       ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(pw, yy); ctx.stroke();
       ctx.fillStyle = ctx.strokeStyle; ctx.textAlign = "right"; ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
       ctx.fillText((x[1] > 0 ? "Support " : "Resistance ") + fp(l.p), pw - 8, yy - 8);
     });
     ctx.setLineDash([]);
-    // trades
-    var sigs = cfg.showPast ? result.signals : (open ? [open] : []);
-    if (preview) sigs = sigs.concat([preview]);
-    sigs.forEach(function (s) {
-      var endBar = s.exitBar != null ? s.exitBar : n - 1;
-      if (endBar < i0 || s.bar > i1) return;
-      var xa = xOf(s.bar, n), xb = s.exitBar != null ? xOf(endBar, n) : pw;
-      var live = s.exitBar == null;
-      ctx.globalAlpha = live ? 1 : 0.55;
-      ctx.fillStyle = C.upbg; var t1 = y(Math.max(s.entry, s.tp)), t2 = y(Math.min(s.entry, s.tp)); ctx.fillRect(xa, t1, xb - xa, t2 - t1);
-      ctx.fillStyle = C.downbg; var u1 = y(Math.max(s.entry, s.sl)), u2 = y(Math.min(s.entry, s.sl)); ctx.fillRect(xa, u1, xb - xa, u2 - u1);
-      ctx.globalAlpha = 1;
-      if (live) {
-        [[s.tp, C.up, "TP"], [s.entry, C.text, "Entry"], [s.sl, C.down, "SL"]].forEach(function (q) {
-          var yy = Math.round(y(q[0])) + 0.5;
-          ctx.strokeStyle = q[1]; ctx.lineWidth = 1; ctx.setLineDash(q[2] === "Entry" ? [2, 3] : []);
-          ctx.beginPath(); ctx.moveTo(xa, yy); ctx.lineTo(pw, yy); ctx.stroke(); ctx.setLineDash([]);
-        });
-      }
-      // marker
-      var b = bars[s.bar], buy = s.side > 0, mx = xOf(s.bar, n);
-      var my = buy ? y(b.l) + 8 : y(b.h) - 8;
-      ctx.fillStyle = s === preview ? C.gold : buy ? C.up : C.down;
-      ctx.beginPath();
-      if (buy) { ctx.moveTo(mx, my); ctx.lineTo(mx - 6, my + 9); ctx.lineTo(mx + 6, my + 9); }
-      else { ctx.moveTo(mx, my); ctx.lineTo(mx - 6, my - 9); ctx.lineTo(mx + 6, my - 9); }
-      ctx.closePath(); ctx.fill();
-      ctx.font = "600 11px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "center";
-      ctx.fillText((s === preview ? "WATCH " : "") + (buy ? "BUY " : "SELL ") + s.grade, mx, buy ? my + 20 : my - 18);
-      if (s.result != null) {
-        var ex = xOf(s.exitBar, n), ey = y(s.how === "Stop loss" ? s.sl : s.how === "Take profit" ? s.tp : bars[s.exitBar].c);
-        ctx.fillStyle = s.result >= 0 ? C.up : C.down;
-        ctx.fillText(fr(s.result), ex, ey + (((s.result >= 0) === buy) ? -10 : 12));
-      }
-    });
+    if (is1H()) {
+      var sigs = cfg.showPast ? result.signals : (open ? [open] : []);
+      if (preview) sigs = sigs.concat([preview]);
+      sigs.forEach(function (s) {
+        var endBar = s.exitBar != null ? s.exitBar : n - 1;
+        if (endBar < i0 || s.bar > i1) return;
+        var xa = xOf(s.bar, n), xb = s.exitBar != null ? xOf(endBar, n) : pw;
+        var live = s.exitBar == null;
+        ctx.globalAlpha = live ? 1 : 0.55;
+        ctx.fillStyle = C.upbg; var t1 = y(Math.max(s.entry, s.tp)), t2 = y(Math.min(s.entry, s.tp)); ctx.fillRect(xa, t1, xb - xa, t2 - t1);
+        ctx.fillStyle = C.downbg; var u1 = y(Math.max(s.entry, s.sl)), u2 = y(Math.min(s.entry, s.sl)); ctx.fillRect(xa, u1, xb - xa, u2 - u1);
+        ctx.globalAlpha = 1;
+        if (live) {
+          [[s.tp, C.up, "TP"], [s.entry, C.text, "Entry"], [s.sl, C.down, "SL"]].forEach(function (q) {
+            var yy = Math.round(y(q[0])) + 0.5;
+            ctx.strokeStyle = q[1]; ctx.lineWidth = 1; ctx.setLineDash(q[2] === "Entry" ? [2, 3] : []);
+            ctx.beginPath(); ctx.moveTo(xa, yy); ctx.lineTo(pw, yy); ctx.stroke(); ctx.setLineDash([]);
+          });
+        }
+        var b = bars[s.bar], buy = s.side > 0, mx = xOf(s.bar, n);
+        var my = buy ? y(b.l) + 8 : y(b.h) - 8;
+        ctx.fillStyle = s === preview ? C.gold : buy ? C.up : C.down;
+        ctx.beginPath();
+        if (buy) { ctx.moveTo(mx, my); ctx.lineTo(mx - 6, my + 9); ctx.lineTo(mx + 6, my + 9); }
+        else { ctx.moveTo(mx, my); ctx.lineTo(mx - 6, my - 9); ctx.lineTo(mx + 6, my - 9); }
+        ctx.closePath(); ctx.fill();
+        ctx.font = "600 11px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "center";
+        ctx.fillText((s === preview ? "WATCH " : "") + (buy ? "BUY " : "SELL ") + s.grade, mx, buy ? my + 20 : my - 18);
+        if (s.result != null) {
+          var r = net(s), ex = xOf(s.exitBar, n), ey = y(s.how === "Stop loss" ? s.sl : s.how === "Take profit" ? s.tp : bars[s.exitBar].c);
+          ctx.fillStyle = r >= 0 ? C.up : C.down;
+          ctx.fillText(fr(r), ex, ey + (((s.result >= 0) === buy) ? -10 : 12));
+        }
+      });
+    } else if (shown) {
+      [[shown.tp, C.up], [shown.entry, C.text], [shown.sl, C.down]].forEach(function (q) {
+        var yy = Math.round(y(q[0])) + 0.5;
+        ctx.strokeStyle = q[1]; ctx.setLineDash(q[1] === C.text ? [2, 3] : []);
+        ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(pw, yy); ctx.stroke(); ctx.setLineDash([]);
+      });
+    }
   }
   // candles
-  var bw = Math.max(1, Math.min(view.spacing * 0.7, view.spacing - 1));
+  var bw = Math.max(1, Math.min(view.spacing * 0.7, view.spacing - 1)), hasF = chartHasForming();
   for (var k = i0; k <= i1; k++) {
     var c = bars[k], cx = Math.round(xOf(k, n)), upc = c.c >= c.o;
     ctx.strokeStyle = ctx.fillStyle = upc ? C["candle-up"] : C["candle-down"];
-    if (k === n - 1 && forming) ctx.globalAlpha = 0.75;
+    if (k === n - 1 && hasF) ctx.globalAlpha = 0.75;
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cx + 0.5, Math.round(y(c.h))); ctx.lineTo(cx + 0.5, Math.round(y(c.l))); ctx.stroke();
     var top = Math.round(y(Math.max(c.o, c.c))), bot = Math.round(y(Math.min(c.o, c.c)));
     ctx.fillRect(Math.round(cx - bw / 2) + 0.5, top, Math.max(1, Math.round(bw)), Math.max(1, bot - top));
     ctx.globalAlpha = 1;
   }
-  // 4H EMA200 (the trend line)
-  if (cfg.showEMA && trend && trend.ema) {
-    ctx.strokeStyle = C.gold; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.5; ctx.beginPath();
+  // trend line: 4H EMA200 (on 1H it is the exact value the rules use; on 4H the EMA200 of the 4H candles)
+  var emaVals = null, emaLabel = "";
+  if (cfg.showEMA && trend) {
+    if (is1H()) { emaVals = trend.ema; emaLabel = trend.source[trend.source.length - 1] + " EMA200"; }
+    else if (cfg.viewTf === "240") { emaVals = emaSeries(bars, 200); emaLabel = "4H EMA200"; }
+  }
+  if (emaVals) {
+    ctx.strokeStyle = C.gold; ctx.globalAlpha = 0.85; ctx.lineWidth = 1.5; ctx.beginPath();
     var started = false;
     for (var e = i0; e <= i1; e++) {
-      var ev = trend.ema[Math.min(e, trend.ema.length - 1)];
+      var ev = emaVals[Math.min(e, emaVals.length - 1)];
       if (ev == null) { started = false; continue; }
-      var ex = xOf(e, n), ey = y(ev);
-      if (!started) { ctx.moveTo(ex - view.spacing / 2, ey); started = true; } else ctx.lineTo(ex - view.spacing / 2, ey);
-      ctx.lineTo(ex + view.spacing / 2, ey);
+      var exx = xOf(e, n), eyy = y(ev);
+      if (!started) { ctx.moveTo(exx - view.spacing / 2, eyy); started = true; } else ctx.lineTo(exx - view.spacing / 2, eyy);
+      ctx.lineTo(exx + view.spacing / 2, eyy);
     }
     ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
-    var lastE = trend.ema[trend.ema.length - 1];
-    if (lastE != null && y(lastE) > 10 && y(lastE) < ph - 10) {
+    var lastE = emaVals[Math.min(i1, emaVals.length - 1)];
+    if (lastE != null && y(lastE) > 40 && y(lastE) < ph - 14) {
       ctx.fillStyle = C.gold; ctx.font = "11px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "left";
-      ctx.fillText(trend.source[trend.source.length - 1] + " EMA200", 8, y(lastE) - 8 < 30 ? y(lastE) + 10 : y(lastE) - 8);
+      ctx.fillText(emaLabel, 8, y(lastE) - 8);
     }
   }
   // session bars along the bottom: London (blue) and New York (gold)
-  if (cfg.showSess) {
+  if (cfg.showSess && tfMin < 1440) {
     for (var q = i0; q <= i1; q++) {
-      var qt = bars[q].t, sx = xOf(q, n) - view.spacing / 2;
-      var inL = q < sessL.length ? sessL[q] : A.inLondon(qt), inN = q < sessN.length ? sessN[q] : A.inNewYork(qt);
-      if (inL) { ctx.fillStyle = C.accent; ctx.globalAlpha = 0.75; ctx.fillRect(sx, ph - 7, view.spacing + 0.5, 3); }
-      if (inN) { ctx.fillStyle = C.gold; ctx.globalAlpha = 0.75; ctx.fillRect(sx, ph - 3.5, view.spacing + 0.5, 3); }
+      var sx = xOf(q, n) - view.spacing / 2, sv = sessAt(bars[q].t);
+      if (sv & 1) { ctx.fillStyle = C.accent; ctx.globalAlpha = 0.75; ctx.fillRect(sx, ph - 7, view.spacing + 0.5, 3); }
+      if (sv & 2) { ctx.fillStyle = C.gold; ctx.globalAlpha = 0.75; ctx.fillRect(sx, ph - 3.5, view.spacing + 0.5, 3); }
     }
     ctx.globalAlpha = 1;
   }
+  // price alerts
+  alerts.forEach(function (a) {
+    var ay = Math.round(y(a.p - off())) + 0.5;
+    if (ay < 0 || ay > ph) return;
+    ctx.strokeStyle = C.accent2; ctx.setLineDash([6, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, ay); ctx.lineTo(pw, ay); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = C.accent2; ctx.font = "600 11px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "left";
+    ctx.fillText("🔔 alert " + a.p.toFixed(2), 8, ay - 8);
+  });
   ctx.restore();
   // last price line
   var lp = lastPrice != null ? lastPrice : bars[n - 1].c;
@@ -955,9 +1239,10 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(pw, ly); ctx.stroke(); ctx.setLineDash([]);
     axisTag(ly, fp(lp), lastUp ? C.up : C.down, "#fff");
   }
-  if (shown && (shown === open || shown === preview)) {
+  if (shown) {
     [[shown.tp, C.up], [shown.sl, C.down]].forEach(function (q) { var yy = y(q[0]); if (yy > 0 && yy < ph) axisTag(yy, fp(q[0]), q[1], "#fff"); });
   }
+  alerts.forEach(function (a) { var ay = y(a.p - off()); if (ay > 0 && ay < ph) axisTag(ay, a.p.toFixed(2), C.accent2, "#04122e"); });
   // crosshair
   var m = view.mouse;
   if (m && m.x < pw && m.y < ph) {
@@ -968,14 +1253,14 @@ function draw() {
     axisTag(m.y, fp(pOf(m.y)), C.accent, "#fff");
     if (ci >= 0 && ci < n) {
       var cb = bars[ci];
-      var lbl = fdt(cb.t);
+      var lbl = tfMin === 1440 ? new Date(cb.t + 7 * H).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) : fdt(cb.t);
       ctx.font = "11px ui-sans-serif,system-ui,sans-serif"; var tw = ctx.measureText(lbl).width + 12;
       ctx.fillStyle = C.accent; ctx.fillRect(cxx - tw / 2, ph, tw, TX); ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText(lbl, cxx, ph + TX / 2);
       legend(cb);
     }
   } else legend(bars[n - 1]);
   $("toLatest").style.display = view.offset > 3 ? "block" : "none";
-  $("sessKey").style.display = cfg.showSess ? "flex" : "none";
+  $("sessKey").style.display = cfg.showSess && tfMin < 1440 ? "flex" : "none";
 }
 function axisTag(yy, text, bg, fg) {
   ctx.font = "11px ui-monospace,Menlo,Consolas,monospace";
@@ -988,36 +1273,45 @@ function legend(b) {
     "</b> <span class='num " + (ch >= 0 ? "up" : "down") + "'>" + (ch >= 0 ? "+" : "") + ch.toFixed(2) + "</span>";
 }
 function clampView() {
-  var n = allBars().length;
+  var n = chartBars().length;
   view.spacing = Math.min(40, Math.max(2, view.spacing));
   view.offset = Math.min(Math.max(-PADR + 2, view.offset), Math.max(0, n - 20));
 }
 function focusBar(i) {
-  var n = allBars().length, visible = (W - AX) / view.spacing;
+  if (!is1H()) setTf("60");
+  var n = chartBars().length, visible = (W - AX) / view.spacing;
   view.offset = Math.max(0, n - 1 - i + PADR - visible / 2); clampView(); dirty();
 }
-// pointer interaction: drag, wheel, pinch, double-click
-var pts = {}, drag = null, pinch = null;
+// pointer interaction: drag, wheel, pinch, double-click, tap to set an alert
+var pts = {}, drag = null, pinch = null, downAt = null;
 cv.addEventListener("pointerdown", function (e) {
   cv.setPointerCapture(e.pointerId); pts[e.pointerId] = { x: e.offsetX, y: e.offsetY };
+  downAt = { x: e.offsetX, y: e.offsetY };
   var ids = Object.keys(pts);
   if (ids.length === 1) drag = { x: e.offsetX, off: view.offset };
-  else if (ids.length === 2) { var a = pts[ids[0]], b = pts[ids[1]]; pinch = { d: Math.abs(a.x - b.x) || 1, sp: view.spacing }; drag = null; }
+  else if (ids.length === 2) { var a = pts[ids[0]], b = pts[ids[1]]; pinch = { d: Math.abs(a.x - b.x) || 1, sp: view.spacing }; drag = null; downAt = null; }
 });
 cv.addEventListener("pointermove", function (e) {
   if (pts[e.pointerId]) pts[e.pointerId] = { x: e.offsetX, y: e.offsetY };
   var ids = Object.keys(pts);
   if (pinch && ids.length === 2) { var a = pts[ids[0]], b = pts[ids[1]]; view.spacing = pinch.sp * (Math.abs(a.x - b.x) || 1) / pinch.d; }
-  else if (drag) view.offset = drag.off + (e.offsetX - drag.x) / view.spacing;
+  else if (drag && !alertMode) view.offset = drag.off + (e.offsetX - drag.x) / view.spacing;
   view.mouse = e.pointerType === "mouse" || !drag ? { x: e.offsetX, y: e.offsetY } : null;
   clampView(); dirty();
 });
-function up(e) { delete pts[e.pointerId]; if (Object.keys(pts).length < 2) pinch = null; if (!Object.keys(pts).length) drag = null; }
-cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+function up(e) {
+  if (downAt && alertMode && Math.abs(e.offsetX - downAt.x) < 6 && Math.abs(e.offsetY - downAt.y) < 6 && view.scale && e.offsetY < view.scale.ph) {
+    addAlert(view.scale.pOf(e.offsetY) + off());
+    alertMode = false; $("alertModeBtn").classList.remove("on"); cv.style.cursor = "crosshair";
+  }
+  downAt = null;
+  delete pts[e.pointerId]; if (Object.keys(pts).length < 2) pinch = null; if (!Object.keys(pts).length) drag = null;
+}
+cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", function (e) { downAt = null; up(e); });
 cv.addEventListener("pointerleave", function () { view.mouse = null; dirty(); });
 cv.addEventListener("wheel", function (e) {
   e.preventDefault();
-  var n = allBars().length, before = iOf(e.offsetX, n);
+  var n = chartBars().length, before = iOf(e.offsetX, n);
   if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) view.offset += e.deltaX / view.spacing;
   else {
     view.spacing *= Math.exp(-e.deltaY * 0.0015); clampView();
@@ -1044,11 +1338,18 @@ function renderClock() {
   el.innerHTML = "candle closes in <b>" + m + ":" + String(sec).padStart(2, "0") + "</b>";
 }
 setInterval(renderClock, 1000);
-function tick() { computePreview(); renderHeader(); renderPanel(); dirty(); }
+function tick() { computePreview(); renderHeader(); renderPanel(); checkAlerts(); dirty(); }
 function loop() { if (needDraw) draw(); requestAnimationFrame(loop); }
 setInterval(function () { if (result) { computePreview(); renderPanel(); } }, 20000);
 
-alertBtn(); resize(); renderTab(); renderClock(); loop(); start();
+alertBtn(); resize(); renderTab(); renderClock(); loop(); start(); loadNews(); setTf(cfg.viewTf);
+// installable app (works on GitHub Pages / localhost; not when opened as a file)
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+  navigator.serviceWorker.register("sw.js").catch(function () {});
+}
+var installEvt = null;
+window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); installEvt = e; $("installBtn").style.display = "inline-block"; });
+$("installBtn").onclick = function () { if (installEvt) { installEvt.prompt(); installEvt = null; $("installBtn").style.display = "none"; } };
 window.__aurum = { get result() { return result; }, get closed() { return closed; }, get forming() { return forming; }, cfg: cfg, view: view };
 })();
 </script>

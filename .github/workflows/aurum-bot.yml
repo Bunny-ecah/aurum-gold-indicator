@@ -1,0 +1,45 @@
+name: Aurum Telegram signals
+
+on:
+  schedule:
+    - cron: "3 * * * *"   # every hour, 3 minutes after the 1H candle closes (GitHub may start it a few minutes late)
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Send a test message now"
+        type: boolean
+        default: true
+
+concurrency: aurum-bot
+
+jobs:
+  signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Restore last checked candle
+        uses: actions/cache/restore@v4
+        with:
+          path: bot/.state
+          key: aurum-state-${{ github.run_id }}
+          restore-keys: aurum-state-
+      - name: Check for signals and send Telegram messages
+        run: node bot/check.js ${{ github.event_name == 'workflow_dispatch' && inputs.test && '--test' || '' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
+          TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
+          BALANCE: ${{ vars.AURUM_BALANCE }}
+          RISK_PCT: ${{ vars.AURUM_RISK_PCT }}
+          MAX_LOSSES: ${{ vars.AURUM_MAX_LOSSES }}
+          TZ_NAME: ${{ vars.AURUM_TIMEZONE }}
+      - name: Remember last checked candle
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: bot/.state
+          key: aurum-state-${{ github.run_id }}

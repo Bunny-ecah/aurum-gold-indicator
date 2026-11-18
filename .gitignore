@@ -19,3 +19,4 @@ Thumbs.db
 backtest/gold.pkl
 backtest/historical-data/
 historical-data/
+bot/.state/

@@ -39,7 +39,12 @@ On real XAUUSD data from 2012 to 2022, the default settings on the **1H chart** 
 - **WATCH** means a setup is forming on the live candle; it becomes BUY NOW / SELL NOW only if the candle closes that way.
 - **Alerts:** press 🔔 for a sound and a browser notification on every new signal and when a trade hits its stop or target (keep the tab open).
 - **For trading:** match your broker's XAUUSD price once (Settings) so the plan shows your broker's prices; **📋 Copy plan** copies entry, SL, TP and lot; **Journal** tab to mark signals Took/Skipped with notes and export to CSV; candle-close countdown; record and equity curve after spread.
+- **More tools:** timeframe views (15m / 1H / 4H / 1D; signals stay on 1H), price alerts (tap ＋🔔 then the chart), big USD news warnings on the panel and chart, a daily loss limit (default: stop after 2 losses), a *demo since* record with 20-trade progress, and **Install app** to put it on your phone's home screen (on GitHub Pages).
 - It never places trades.
+
+## Signals on Telegram
+
+A free GitHub job checks gold every hour with the same rules and sends **BUY/SELL signals, trade results and news warnings to Telegram** — your laptop can be off. Setup (10 minutes): [`TELEGRAM-GUIDE.md`](TELEGRAM-GUIDE.md). Code: [`bot/`](bot/), workflows in `.github/workflows/`.
 
 **Open it:** on Windows double-click `docs/start-webapp.bat`: it starts a small local server and opens **http://localhost:8080** (keep its window open; close it to stop). Or double-click `docs/index.html`, or publish it free with GitHub Pages: repository **Settings → Pages → Source: Deploy from a branch → Branch `main`, folder `/docs` → Save**. After a minute it is at `https://bunny-ecah.github.io/aurum-gold-indicator/` (the repository must be public for free Pages).
 

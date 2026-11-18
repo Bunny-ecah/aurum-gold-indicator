@@ -1,0 +1,30 @@
+name: Aurum news calendar
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"   # every 6 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: aurum-news
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node bot/news.js
+      - name: Commit docs/news.json if it changed
+        run: |
+          if git diff --quiet -- docs/news.json; then echo "no change"; exit 0; fi
+          git config user.name "aurum-news-bot"
+          git config user.email "aurum-news-bot@users.noreply.github.com"
+          git add docs/news.json
+          git commit -m "Update news calendar"
+          git push

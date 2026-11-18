@@ -15,7 +15,7 @@ Write-Host "  Keep this window open. Close it to stop the app."
 Write-Host ""
 Start-Process "http://localhost:$port/"
 $types = @{ '.html' = 'text/html; charset=utf-8'; '.js' = 'application/javascript; charset=utf-8'; '.css' = 'text/css; charset=utf-8';
-            '.png' = 'image/png'; '.svg' = 'image/svg+xml'; '.json' = 'application/json'; '.ico' = 'image/x-icon' }
+            '.png' = 'image/png'; '.svg' = 'image/svg+xml'; '.json' = 'application/json'; '.ico' = 'image/x-icon'; '.webmanifest' = 'application/manifest+json' }
 while ($listener.IsListening) {
   $ctx = $listener.GetContext()
   $res = $ctx.Response
