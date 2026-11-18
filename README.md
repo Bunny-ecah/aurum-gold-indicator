@@ -40,7 +40,7 @@ On real XAUUSD data from 2012 to 2022, the default settings on the **1H chart** 
 - **Alerts:** press 🔔 for a sound and a browser notification on every new signal (keep the tab open).
 - It never places trades.
 
-**Open it:** double-click `docs/index.html` on your computer, or publish it free with GitHub Pages: repository **Settings → Pages → Source: Deploy from a branch → Branch `main`, folder `/docs` → Save**. After a minute it is at `https://bunny-ecah.github.io/aurum-gold-indicator/` (the repository must be public for free Pages).
+**Open it:** on Windows double-click `docs/start-webapp.bat`: it starts a small local server and opens **http://localhost:8080** (keep its window open; close it to stop). Or double-click `docs/index.html`, or publish it free with GitHub Pages: repository **Settings → Pages → Source: Deploy from a branch → Branch `main`, folder `/docs` → Save**. After a minute it is at `https://bunny-ecah.github.io/aurum-gold-indicator/` (the repository must be public for free Pages).
 
 ## Automatic demo trading (MT5 EA)
 
