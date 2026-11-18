@@ -7,6 +7,7 @@
 | Platform | Current source | Status |
 | --- | --- | --- |
 | MT5 | [`mt5/AurumConfirmation.mq5`](mt5/AurumConfirmation.mq5) + [`AurumCore.mqh`](mt5/AurumCore.mqh) | v4.20; core tests pass; MetaEditor compile and demo testing outstanding |
+| Web app | [`docs/index.html`](docs/index.html) + [`docs/aurum.js`](docs/aurum.js) | Live gold 1H chart with the same signals; works in any browser and on phones |
 | TradingView | [`tradingview/AurumSignalAudit.pine`](tradingview/AurumSignalAudit.pine) | v6 all-in-one (panel + signals + Strategy Tester in one script); compiles in Pine Editor; demo testing outstanding |
 
 Earlier TradingView sources are retained for comparison: basic indicator, multi-timeframe v2 and entry-planner v3. Install only the version you intend to use, rather than all of them on one chart.
@@ -28,6 +29,18 @@ How to use it, read the panel and backtest: [`tradingview/GUIDE.md`](tradingview
 ## Backtest result
 
 On real XAUUSD data from 2012 to 2022, the default settings on the **1H chart** made a small profit after spread: **239 trades, 43% win, profit factor 1.19, +26.9R, worst drawdown −11.6R**, profitable in each of the three periods tested. 15m and lower lost money with every setting tried. Full results, method and a demo-account plan: [`BACKTEST-RESULTS.md`](BACKTEST-RESULTS.md). Rerun it yourself: [`backtest/`](backtest/README.md).
+
+## Web app (live chart)
+
+[`docs/`](docs/) is a one-page web app: a **live 1H gold chart** with the Aurum zones, levels, BUY/SELL signals, the trade plan panel (entry, stop, target, RR, lot, quality, win chance), the record and alerts. No install, no account, works on phones.
+
+- **Prices:** PAXG/USDT live from Binance (free, no key; a gold-backed token that follows spot gold within a few dollars; weekend candles are left out because spot gold is closed). For real **XAU/USD**, paste a free [Twelve Data](https://twelvedata.com) key in *Settings* (updates every 2 minutes).
+- **Same rules:** `docs/aurum.js` is a port of the reference model and gives the identical 239 signals on the 2012–2022 data (`python tradingview/tests/test_webapp.py`).
+- **WATCH** means a setup is forming on the live candle; it becomes BUY NOW / SELL NOW only if the candle closes that way.
+- **Alerts:** press 🔔 for a sound and a browser notification on every new signal (keep the tab open).
+- It never places trades.
+
+**Open it:** double-click `docs/index.html` on your computer, or publish it free with GitHub Pages: repository **Settings → Pages → Source: Deploy from a branch → Branch `main`, folder `/docs` → Save**. After a minute it is at `https://bunny-ecah.github.io/aurum-gold-indicator/` (the repository must be public for free Pages).
 
 ## Automatic demo trading (MT5 EA)
 
@@ -62,7 +75,9 @@ Requires Python 3. Run from the repository root:
 python tradingview/tests/test_tradingview.py
 ```
 
-This runs 35 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
+`python tradingview/tests/test_webapp.py` checks the web app's engine against the model (needs Node.js).
+
+The first command runs 35 source-contract, rule and reference-model tests (`tradingview/tests/model.py` mirrors the rules). It is **not** a Pine compiler or TradingView engine test and cannot demonstrate profitability.
 
 For the MT5 decision core, open an x64 Native Tools Command Prompt for Visual Studio and run:
 

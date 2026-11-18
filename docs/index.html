@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Aurum Gold Live</title>
+<meta name="description" content="Live gold 1H chart with the Aurum Gold supply/demand + support/resistance signals.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d4a537'/%3E%3Cpath d='M9 22 16 8l7 14z' fill='%23141414'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f6f5f2;--panel:#ffffff;--line:#e4e1da;--text:#1b1b1a;--muted:#6b6862;--grid:rgba(0,0,0,.06);
+  --gold:#a87a12;--up:#0e8a5f;--down:#cc3b3b;--upbg:rgba(14,138,95,.12);--downbg:rgba(204,59,59,.11);
+  --demand:rgba(14,138,95,.16);--supply:rgba(204,59,59,.14);--warn:#c46a00;--chip:#f0eee9;
+  --candle-up:#0e8a5f;--candle-down:#cc3b3b;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1012;--panel:#17181b;--line:#2a2c31;--text:#ecebe7;--muted:#9a978f;--grid:rgba(255,255,255,.05);
+  --gold:#e0b44a;--up:#2fbf86;--down:#ef5a5a;--upbg:rgba(47,191,134,.14);--downbg:rgba(239,90,90,.13);
+  --demand:rgba(47,191,134,.16);--supply:rgba(239,90,90,.15);--warn:#f0a23a;--chip:#22242a;
+  --candle-up:#2fbf86;--candle-down:#ef5a5a;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f1012;--panel:#17181b;--line:#2a2c31;--text:#ecebe7;--muted:#9a978f;--grid:rgba(255,255,255,.05);
+  --gold:#e0b44a;--up:#2fbf86;--down:#ef5a5a;--upbg:rgba(47,191,134,.14);--downbg:rgba(239,90,90,.13);
+  --demand:rgba(47,191,134,.16);--supply:rgba(239,90,90,.15);--warn:#f0a23a;--chip:#22242a;
+  --candle-up:#2fbf86;--candle-down:#ef5a5a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:14px/1.4 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.02em}
+.brand i{width:22px;height:22px;border-radius:6px;background:var(--gold);display:inline-block;position:relative}
+.brand i:after{content:"";position:absolute;left:5px;top:5px;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:11px solid var(--panel)}
+.price{font-size:20px;font-weight:700}
+.chg{font-size:13px}
+.up{color:var(--up)}.down{color:var(--down)}.muted{color:var(--muted)}.warn{color:var(--warn)}
+.live{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.on{background:var(--up);box-shadow:0 0 0 3px var(--upbg)}
+.dot.bad{background:var(--down)}
+.spacer{flex:1}
+button,select,input{font:inherit;color:inherit}
+.btn{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--muted)}
+.btn.on{border-color:var(--gold);color:var(--gold)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:0;height:calc(100% - 53px)}
+#chartWrap{position:relative;min-height:360px;border-right:1px solid var(--line)}
+#chart{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair;display:block}
+#legend{position:absolute;left:12px;top:8px;font-size:12px;pointer-events:none;color:var(--muted)}
+#legend b{color:var(--text);font-weight:600}
+#toLatest{position:absolute;right:76px;bottom:34px;display:none}
+#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px}
+aside{background:var(--panel);overflow:auto;display:flex;flex-direction:column}
+.status{padding:14px 16px;border-bottom:1px solid var(--line)}
+.status .big{font-size:26px;font-weight:800;letter-spacing:.02em}
+.status.buy{background:var(--upbg)}.status.buy .big{color:var(--up)}
+.status.sell{background:var(--downbg)}.status.sell .big{color:var(--down)}
+.status .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.rows{padding:4px 16px 8px}
+.row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.row:last-child{border-bottom:0}
+.row .k{color:var(--muted);white-space:nowrap}
+.row .v{text-align:right}
+.sec{padding:10px 16px 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.gradeA{color:var(--up);font-weight:700}.gradeB{color:var(--gold);font-weight:700}.gradeC{color:var(--muted);font-weight:700}
+.last20{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end}
+.last20 span{width:9px;height:9px;border-radius:2px;background:var(--muted)}
+.last20 .w{background:var(--up)}.last20 .l{background:var(--down)}
+.tabs{display:flex;gap:6px;padding:10px 16px 0;border-top:1px solid var(--line);margin-top:auto}
+.tabs .btn{font-size:12px;padding:5px 9px}
+#tabBody{padding:8px 16px 16px;font-size:12.5px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:5px 4px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600;font-size:11.5px}
+label.f{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0}
+label.f select,label.f input{background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:4px 6px;max-width:150px}
+label.f input[type=checkbox]{width:16px;height:16px}
+.note{color:var(--muted);font-size:12px;margin:8px 0}
+.foot{padding:10px 16px 14px;color:var(--muted);font-size:11.5px;border-top:1px solid var(--line)}
+@media (max-width:860px){
+  main{grid-template-columns:1fr;height:auto}
+  #chartWrap{height:62vh;border-right:0;border-bottom:1px solid var(--line)}
+  header{padding:8px 16px;gap:10px}
+  .price{font-size:18px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><i></i>AURUM GOLD</div>
+  <div><span id="sym" class="muted">PAXG/USDT · 1H</span></div>
+  <div class="price num" id="price">—</div>
+  <div class="chg num" id="chg"></div>
+  <div class="live"><span class="dot" id="dot"></span><span id="liveTxt">connecting…</span></div>
+  <div class="spacer"></div>
+  <button class="btn" id="alertBtn" title="Browser notification + sound on every new signal">🔔 Alerts off</button>
+  <button class="btn" id="themeBtn" title="Light / dark">Theme</button>
+</header>
+<main>
+  <div id="chartWrap">
+    <canvas id="chart"></canvas>
+    <div id="legend"></div>
+    <button class="btn" id="toLatest">Latest ›</button>
+    <div id="loading">Loading gold prices…</div>
+  </div>
+  <aside>
+    <div class="status" id="statusBox"><div class="big" id="statusBig">WAIT</div><div class="sub" id="statusSub">—</div></div>
+    <div class="rows" id="planRows"></div>
+    <div class="sec">Record (this chart's history)</div>
+    <div class="rows" id="recRows"></div>
+    <div class="tabs">
+      <button class="btn on" data-tab="trades">Trades</button>
+      <button class="btn" data-tab="settings">Settings</button>
+      <button class="btn" data-tab="about">About</button>
+    </div>
+    <div id="tabBody"></div>
+    <div class="foot">Signals only — this page never places trades. Demo research, not financial advice.</div>
+  </aside>
+</main>
+<script src="aurum.js"></script>
+<script>
+(function () {
+"use strict";
+var A = window.Aurum;
+var $ = function (id) { return document.getElementById(id); };
+var H = 3600000;
+
+// ---------------- settings ----------------
+var SKEY = "aurum.web.settings.v1";
+var cfg = Object.assign({}, A.DEFAULTS, { source: "paxg", tdKey: "", showAll: false, showPast: true, alerts: false, theme: "" });
+try { Object.assign(cfg, JSON.parse(localStorage.getItem(SKEY) || "{}")); } catch (e) {}
+function save() { try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch (e) {} }
+if (cfg.theme) document.documentElement.setAttribute("data-theme", cfg.theme);
+
+// ---------------- state ----------------
+var closed = [];        // closed 1H candles while the gold market is open
+var forming = null;     // the live candle
+var result = null, trend = null, sessL = [], sessN = [], preview = null;
+var lastPrice = null, booted = false;
+
+// ---------------- formatting ----------------
+function fp(x) { return x == null || isNaN(x) ? "—" : x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fr(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "R"; }
+function pct(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "%"; }
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+var dtf = new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+function fdt(ms) { return dtf.format(new Date(ms)); }
+
+// ---------------- engine ----------------
+function compute() {
+  if (closed.length < 60) return;
+  var t = A.trend4H(closed, 60);
+  trend = t;
+  sessL = closed.map(function (b) { return A.inLondon(b.t); });
+  sessN = closed.map(function (b) { return A.inNewYork(b.t); });
+  var allowed = cfg.sessions === "All day" ? null : closed.map(function (b, i) {
+    return cfg.sessions === "London only" ? sessL[i] : cfg.sessions === "New York only" ? sessN[i] : sessL[i] || sessN[i];
+  });
+  var prev = result;
+  result = A.run(closed, t.dir, cfg, { allowed: allowed, london: sessL, newyork: sessN });
+  // new confirmed signal on the candle that just closed -> alert
+  var last = result.signals[result.signals.length - 1];
+  if (booted && prev && last && last.bar === closed.length - 1) notify(last);
+  computePreview();
+}
+// Would the live candle be a signal if it closed at the current price? (not confirmed)
+var previewAt = 0;
+function computePreview() {
+  preview = null;
+  if (!result || !forming || result.open) return;
+  var now = Date.now();
+  if (now - previewAt < 1500) return;
+  previewAt = now;
+  var bars = closed.concat([forming]);
+  var t = A.trend4H(bars, 60).dir;
+  var allowed = cfg.sessions === "All day" ? null : bars.map(function (b) {
+    var l = A.inLondon(b.t), n = A.inNewYork(b.t);
+    return cfg.sessions === "London only" ? l : cfg.sessions === "New York only" ? n : l || n;
+  });
+  var r = A.run(bars, t, cfg, { allowed: allowed, london: bars.map(function (b) { return A.inLondon(b.t); }), newyork: bars.map(function (b) { return A.inNewYork(b.t); }) });
+  var s = r.signals[r.signals.length - 1];
+  if (s && s.bar === bars.length - 1) preview = s;
+}
+
+// ---------------- alerts ----------------
+function beep() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.18].forEach(function (d) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.15, ctx.currentTime + d); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.15);
+      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.16);
+    });
+  } catch (e) {}
+}
+function notify(s) {
+  var key = "aurum.web.lastAlert";
+  try { if (localStorage.getItem(key) === String(s.t)) return; localStorage.setItem(key, String(s.t)); } catch (e) {}
+  if (!cfg.alerts) return;
+  var side = s.side > 0 ? "BUY" : "SELL";
+  var body = "Grade " + s.grade + " " + s.quality + "/100 | Entry " + fp(s.entry) + " | SL " + fp(s.sl) + " | TP " + fp(s.tp) + " | RR 1:" + s.rr.toFixed(1) + " | " + s.why;
+  beep();
+  try { if ("Notification" in window && Notification.permission === "granted") new Notification("Aurum " + side + " gold 1H", { body: body }); } catch (e) {}
+}
+function alertBtn() {
+  $("alertBtn").textContent = cfg.alerts ? "🔔 Alerts on" : "🔔 Alerts off";
+  $("alertBtn").classList.toggle("on", !!cfg.alerts);
+}
+$("alertBtn").onclick = function () {
+  cfg.alerts = !cfg.alerts; save(); alertBtn();
+  if (cfg.alerts && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
+  if (cfg.alerts) beep();
+};
+$("themeBtn").onclick = function () {
+  var dark = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() === "#0f1012";
+  cfg.theme = dark ? "light" : "dark"; save();
+  document.documentElement.setAttribute("data-theme", cfg.theme);
+  readColors(); dirty();
+};
+
+// ---------------- data feeds ----------------
+function setLive(state, text) {
+  $("dot").className = "dot" + (state === "on" ? " on" : state === "bad" ? " bad" : "");
+  $("liveTxt").textContent = text;
+}
+function mergeBar(b) {      // b = {t,o,h,l,c,final}
+  if (!A.goldMarketOpen(b.t)) { lastPrice = b.c; return false; }   // PAXG weekend / daily-break hours are left out
+  var lastClosed = closed[closed.length - 1];
+  if (b.final) {
+    if (lastClosed && b.t <= lastClosed.t) { if (b.t === lastClosed.t) closed[closed.length - 1] = strip(b); return false; }
+    closed.push(strip(b)); if (forming && forming.t <= b.t) forming = null;
+    lastPrice = b.c;
+    return true;
+  }
+  if (!lastClosed || b.t > lastClosed.t) forming = strip(b);
+  lastPrice = b.c;
+  return false;
+}
+function strip(b) { return { t: b.t, o: b.o, h: b.h, l: b.l, c: b.c }; }
+
+var BIN_REST = ["https://api.binance.com", "https://data-api.binance.vision"];
+var BIN_WS = ["wss://stream.binance.com:9443/ws/paxgusdt@kline_1h", "wss://data-stream.binance.vision/ws/paxgusdt@kline_1h"];
+var restBase = null, ws = null, wsIdx = 0, wsRetry = 0, lastMsg = 0, pollTimer = null;
+
+function fetchJSON(url) {
+  return fetch(url, { cache: "no-store" }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw new Error(r.status + " " + t.slice(0, 120)); });
+    return r.json();
+  });
+}
+function binKlines(endTime, limit) {
+  var q = "/api/v3/klines?symbol=PAXGUSDT&interval=1h&limit=" + (limit || 1000) + (endTime ? "&endTime=" + endTime : "");
+  var tries = restBase ? [restBase] : BIN_REST.slice();
+  function attempt(k) {
+    return fetchJSON(tries[k] + q).then(function (d) { restBase = tries[k]; return d; }, function (e) {
+      if (k + 1 < tries.length) return attempt(k + 1);
+      throw e;
+    });
+  }
+  return attempt(0);
+}
+function binBar(k, now) { return { t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], final: +k[6] < now }; }
+
+function loadPaxg() {
+  $("sym").textContent = "PAXG/USDT · 1H";
+  var pages = [], end = null, n = 0;
+  function next() {
+    return binKlines(end, 1000).then(function (d) {
+      if (!d.length) return;
+      pages.unshift(d); end = +d[0][0] - 1; n++;
+      if (n < 4 && d.length === 1000) return next();
+    });
+  }
+  return next().then(function () {
+    var now = Date.now();
+    closed = []; forming = null;
+    pages.forEach(function (p) { p.forEach(function (k) { mergeBar(binBar(k, now)); }); });
+    connectWs();
+  });
+}
+function connectWs() {
+  try { if (ws) ws.close(); } catch (e) {}
+  var url = BIN_WS[wsIdx % BIN_WS.length];
+  ws = new WebSocket(url);
+  ws.onopen = function () { wsRetry = 0; setLive("on", "live"); };
+  ws.onmessage = function (ev) {
+    lastMsg = Date.now();
+    var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    var k = m.k; if (!k) return;
+    var b = { t: +k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, final: !!k.x };
+    var newClose = mergeBar(b);
+    if (b.final) {
+      // keep the forming slot empty until the next candle's first update
+      if (newClose) compute();
+    }
+    tick();
+  };
+  ws.onclose = function () {
+    setLive("bad", "reconnecting…");
+    wsIdx++; wsRetry++;
+    setTimeout(connectWs, Math.min(30000, 1000 * Math.pow(2, Math.min(wsRetry, 5))));
+  };
+  ws.onerror = function () { try { ws.close(); } catch (e) {} };
+}
+// Safety net: if the stream is silent, refresh the last candles over REST.
+setInterval(function () {
+  if (cfg.source !== "paxg" || !closed.length) return;
+  if (Date.now() - lastMsg < 45000) return;
+  binKlines(null, 5).then(function (d) {
+    var now = Date.now(), changed = false;
+    d.forEach(function (k) { changed = mergeBar(binBar(k, now)) || changed; });
+    if (changed) compute();
+    tick();
+  }).catch(function () {});
+}, 30000);
+
+// Twelve Data: real XAU/USD with the viewer's own free API key (polled every 2 minutes).
+function tdUrl(size) {
+  return "https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1h&timezone=UTC&order=ASC&outputsize=" + size + "&apikey=" + encodeURIComponent(cfg.tdKey);
+}
+function tdBars(d) {
+  if (d.status === "error" || !d.values) throw new Error(d.message || "Twelve Data error");
+  var now = Date.now();
+  return d.values.map(function (v) {
+    var p = v.datetime.split(/[- :]/).map(Number);
+    var t = Date.UTC(p[0], p[1] - 1, p[2], p[3] || 0, p[4] || 0);
+    return { t: t, o: +v.open, h: +v.high, l: +v.low, c: +v.close, final: t + H <= now };
+  });
+}
+function loadTwelve() {
+  $("sym").textContent = "XAU/USD · 1H (Twelve Data)";
+  return fetchJSON(tdUrl(5000)).then(function (d) {
+    closed = []; forming = null;
+    tdBars(d).forEach(mergeBar);
+    setLive("on", "updates every 2 min");
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(function () {
+      fetchJSON(tdUrl(3)).then(function (d2) {
+        var changed = false;
+        tdBars(d2).forEach(function (b) { changed = mergeBar(b) || changed; });
+        if (changed) compute();
+        setLive("on", "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+        tick();
+      }).catch(function (e) { setLive("bad", "update failed: " + e.message.slice(0, 40)); });
+    }, 120000);
+  });
+}
+
+function start() {
+  $("loading").style.display = "flex";
+  $("loading").textContent = "Loading gold prices…";
+  booted = false;
+  try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) {}
+  if (pollTimer) clearInterval(pollTimer);
+  var p = cfg.source === "twelve" && cfg.tdKey ? loadTwelve() : loadPaxg();
+  p.then(function () {
+    $("loading").style.display = "none";
+    compute(); booted = true; view.offset = 0; tick(); renderTab();
+  }).catch(function (e) {
+    setLive("bad", "no data");
+    $("loading").innerHTML = "Could not load prices.<br><span class='num'>" + esc(e.message) + "</span><br><br>" +
+      (cfg.source === "twelve" ? "Check your Twelve Data key in Settings." : "Binance may be blocked on this network. Try another network, or use a Twelve Data key (Settings).") +
+      "<br><br><button class='btn' onclick='location.reload()'>Retry</button>";
+  });
+}
+
+// ---------------- panel ----------------
+function row(k, v, cls) { return '<div class="row"><span class="k">' + k + '</span><span class="v ' + (cls || "") + '">' + v + "</span></div>"; }
+function gradeCls(g) { return "grade" + g; }
+function nearestAreas(price) {
+  var o = { dz: null, sp: null, sz: null, rs: null };
+  if (!result) return o;
+  result.demand.forEach(function (z) { if (z.top < price && (!o.dz || z.top > o.dz.top)) o.dz = z; });
+  result.supply.forEach(function (z) { if (z.bot > price && (!o.sz || z.bot < o.sz.bot)) o.sz = z; });
+  result.sup.forEach(function (x) { if (x.p < price && (!o.sp || x.p > o.sp.p)) o.sp = x; });
+  result.res.forEach(function (x) { if (x.p > price && (!o.rs || x.p < o.rs.p)) o.rs = x; });
+  return o;
+}
+function sessionText(ms) {
+  if (!A.goldMarketOpen(ms)) return ["Gold market closed", "muted"];
+  var l = A.inLondon(ms), n = A.inNewYork(ms);
+  return l && n ? ["London + New York", "up"] : l ? ["London", "up"] : n ? ["New York", "up"] : ["Asia / quiet hours", "muted"];
+}
+function sessionOK(ms) {
+  if (cfg.sessions === "All day") return true;
+  var l = A.inLondon(ms), n = A.inNewYork(ms);
+  return cfg.sessions === "London only" ? l : cfg.sessions === "New York only" ? n : l || n;
+}
+function winChance(g) {
+  var r = A.record(result.signals, function (x) { return x.grade === g; });
+  if (r.n >= 5) return r.winPct.toFixed(0) + "% <span class='muted'>(grade " + g + ", " + r.n + " trades)</span>";
+  var all = A.record(result.signals);
+  return all.n ? all.winPct.toFixed(0) + "% <span class='muted'>(all grades, " + all.n + ")</span>" : "—";
+}
+function planRows(s, live) {
+  var risk = Math.abs(s.entry - s.sl), lot = A.lots(cfg.balance, cfg.riskPct, s.entry, s.sl, cfg.contract);
+  var lotTxt, realPct;
+  if (lot >= 0.01) { realPct = lot * risk * cfg.contract / cfg.balance * 100; lotTxt = lot.toFixed(2) + " lot"; }
+  else { realPct = 0.01 * risk * cfg.contract / cfg.balance * 100; lotTxt = "<span class='warn'>0.01 min lot = " + realPct.toFixed(1) + "% risk</span>"; }
+  var h = "";
+  h += row("ENTRY", "<span class='num'>" + fp(s.entry) + "</span>");
+  h += row("STOP LOSS", "<span class='num'>" + fp(s.sl) + "</span> <span class='down num'>(" + pct(-realPct) + ", $" + risk.toFixed(2) + " away)</span>");
+  h += row("TAKE PROFIT", "<span class='num'>" + fp(s.tp) + "</span> <span class='up num'>(" + pct(realPct * s.rr) + ")</span>");
+  h += row("RR · LOT", "<span class='num'>1:" + s.rr.toFixed(1) + "</span> · " + lotTxt);
+  h += row("QUALITY", "<span class='" + gradeCls(s.grade) + "'>" + s.grade + "</span> <span class='num'>" + s.quality + "/100</span> · " + esc(s.why));
+  h += row("WIN CHANCE", winChance(s.grade));
+  if (live != null) h += row("NOW", "<span class='num " + (live >= 0 ? "up" : "down") + "'>" + fr(live) + "</span> <span class='muted'>(" + (closed.length - 1 - s.bar) + " of " + cfg.maxBars + " candles)</span>");
+  return h;
+}
+function renderPanel() {
+  if (!result) return;
+  var price = lastPrice != null ? lastPrice : closed[closed.length - 1].c;
+  var nowMs = Date.now();
+  var box = $("statusBox"), big = $("statusBig"), sub = $("statusSub");
+  var dir = trend.dir[trend.dir.length - 1];
+  var lastSig = result.signals[result.signals.length - 1];
+  var open = result.open;
+  var justNow = open && open.bar === closed.length - 1;
+  var nextClose = (forming ? forming.t : closed[closed.length - 1].t + H) + H;
+  var mins = Math.max(0, Math.round((nextClose - nowMs) / 60000));
+  box.className = "status";
+  var h = "";
+  var tr = dir > 0 ? ["UP", "up"] : dir < 0 ? ["DOWN", "down"] : ["FLAT", "muted"];
+  h += row("TREND", "<span class='" + tr[1] + "'><b>" + tr[0] + "</b></span> <span class='muted'>(" + trend.source[trend.source.length - 1] + " vs EMA200)</span>");
+  var ss = sessionText(nowMs);
+  h += row("SESSION", "<span class='" + ss[1] + "'>" + ss[0] + "</span>" + (cfg.sessions !== "All day" ? " <span class='muted'>· trading " + cfg.sessions + "</span>" : ""));
+  if (open) {
+    var side = open.side > 0 ? "BUY" : "SELL";
+    box.classList.add(open.side > 0 ? "buy" : "sell");
+    big.textContent = justNow ? side + " NOW" : "IN " + side;
+    sub.textContent = justNow ? "Signal on the candle that closed at " + fdt(closed[closed.length - 1].t + H) + ". Use the plan below." : "Trade open since " + fdt(open.t + H) + " · manage with the stop and target below";
+    var live = (price - open.entry) / Math.abs(open.entry - open.sl) * open.side;
+    h += planRows(open, justNow ? null : live);
+  } else if (preview) {
+    big.textContent = "WATCH " + (preview.side > 0 ? "BUY" : "SELL");
+    sub.textContent = "A " + (preview.side > 0 ? "buy" : "sell") + " setup is forming. Confirmed only if the candle closes like this, in " + mins + " min.";
+    h += planRows(preview, null);
+  } else {
+    big.textContent = "WAIT";
+    sub.textContent = "No trade now · next candle closes in " + mins + " min";
+    var na = nearestAreas(price), next;
+    if (!sessionOK(nowMs)) next = "Wait for " + cfg.sessions + " to open";
+    else if (dir > 0) {
+      var bz = na.dz, bs = na.sp;
+      if (!bz && !bs) next = "No buy area below";
+      else if (bz && (!bs || bz.top >= bs.p)) next = "Dip into Demand <span class='num'>" + fp(bz.bot) + "–" + fp(bz.top) + "</span> + bullish candle";
+      else next = "Dip to Support <span class='num'>" + fp(bs.p) + "</span>" + (cfg.mode === "Aggressive" ? "" : " (needs a demand zone in " + cfg.mode + ")") + " + bullish candle";
+    } else if (dir < 0) {
+      var sz = na.sz, rs = na.rs;
+      if (!sz && !rs) next = "No sell area above";
+      else if (sz && (!rs || sz.bot <= rs.p)) next = "Rally into Supply <span class='num'>" + fp(sz.bot) + "–" + fp(sz.top) + "</span> + bearish candle";
+      else next = "Rally to Resistance <span class='num'>" + fp(rs.p) + "</span>" + (cfg.mode === "Aggressive" ? "" : " (needs a supply zone in " + cfg.mode + ")") + " + bearish candle";
+    } else next = "Wait for the trend to turn";
+    h += row("NEXT", next);
+    if (result.lastSkip && closed.length - 1 - result.lastSkip.bar < 24)
+      h += row("NOTE", (result.lastSkip.side > 0 ? "BUY" : "SELL") + " setup " + fdt(closed[result.lastSkip.bar].t + H) + " skipped: " + esc(result.lastSkip.why), "muted");
+    if (lastSig && lastSig.result != null)
+      h += row("LAST TRADE", (lastSig.side > 0 ? "BUY " : "SELL ") + fdt(lastSig.t + H) + " → <span class='num " + (lastSig.result >= 0 ? "up" : "down") + "'>" + fr(lastSig.result) + "</span> <span class='muted'>(" + lastSig.how + ")</span>");
+  }
+  $("planRows").innerHTML = h;
+
+  var rec = A.record(result.signals), r = "";
+  var first = closed[0].t;
+  r += row("TRADES", rec.n ? "<span class='num'>" + rec.n + "</span> · win <span class='num'>" + rec.winPct.toFixed(0) + "%</span> · <span class='num " + (rec.total >= 0 ? "up" : "down") + "'>" + fr(rec.total) + "</span>" : "none yet");
+  if (rec.n) {
+    r += row("PROFIT FACTOR", "<span class='num'>" + (isFinite(rec.pf) ? rec.pf.toFixed(2) : "∞") + "</span> · avg <span class='num'>" + fr(rec.avg) + "</span>");
+    r += row("BY GRADE", ["A", "B", "C"].map(function (g) {
+      var x = A.record(result.signals, function (s) { return s.grade === g; });
+      return "<span class='" + gradeCls(g) + "'>" + g + "</span> <span class='num'>" + (x.n ? x.winPct.toFixed(0) + "%" : "–") + "</span><span class='muted'>(" + x.n + ")</span>";
+    }).join(" · "));
+    var done = result.signals.filter(function (s) { return s.result != null; }).slice(-20);
+    r += row("LAST 20", "<span class='last20'>" + done.map(function (s) { return "<span class='" + (s.result > 0 ? "w" : "l") + "' title='" + fr(s.result) + "'></span>"; }).join("") + "</span>");
+  }
+  var st = result.stats;
+  var blocked = [["trend", st.trend], ["weak area", st.weak], ["session", st.session], ["target too close", st.target], ["trade open", st.busy]]
+    .filter(function (x) { return x[1] > 0; }).sort(function (a, b) { return b[1] - a[1]; })
+    .map(function (x) { return x[0] + " " + Math.round(100 * x[1] / Math.max(1, st.setups)) + "%"; }).join(" · ");
+  r += row("SETUPS", "<span class='num'>" + st.setups + "</span> seen · <span class='num'>" + st.traded + "</span> traded");
+  if (blocked) r += row("BLOCKED BY", blocked, "muted");
+  r += row("HISTORY", fdt(first) + " → now <span class='muted'>(" + closed.length + " candles)</span>", "muted");
+  $("recRows").innerHTML = r;
+}
+
+// ---------------- tabs ----------------
+var tab = "trades";
+document.querySelectorAll(".tabs .btn").forEach(function (b) {
+  b.onclick = function () {
+    tab = b.getAttribute("data-tab");
+    document.querySelectorAll(".tabs .btn").forEach(function (x) { x.classList.toggle("on", x === b); });
+    renderTab();
+  };
+});
+function sel(name, label, opts) {
+  return '<label class="f">' + label + '<select data-k="' + name + '">' + opts.map(function (o) {
+    var v = Array.isArray(o) ? o[0] : o, t = Array.isArray(o) ? o[1] : o;
+    return '<option value="' + v + '"' + (String(cfg[name]) === String(v) ? " selected" : "") + ">" + t + "</option>";
+  }).join("") + "</select></label>";
+}
+function inp(name, label, step) {
+  return '<label class="f">' + label + '<input type="number" step="' + step + '" data-k="' + name + '" value="' + cfg[name] + '"></label>';
+}
+function chk(name, label) {
+  return '<label class="f">' + label + '<input type="checkbox" data-k="' + name + '"' + (cfg[name] ? " checked" : "") + "></label>";
+}
+function renderTab() {
+  var el = $("tabBody"), h = "";
+  if (tab === "trades") {
+    if (!result || !result.signals.length) { el.innerHTML = "<p class='note'>No signals in the loaded history yet.</p>"; return; }
+    h = "<table><tr><th>Signal</th><th>Side</th><th>Gr.</th><th>Entry</th><th>Result</th></tr>";
+    result.signals.slice().reverse().slice(0, 60).forEach(function (s) {
+      h += "<tr data-bar='" + s.bar + "' style='cursor:pointer'><td>" + fdt(s.t + H) + "</td><td class='" + (s.side > 0 ? "up" : "down") + "'>" + (s.side > 0 ? "BUY" : "SELL") +
+        "</td><td class='" + gradeCls(s.grade) + "'>" + s.grade + "</td><td class='num'>" + fp(s.entry) + "</td><td class='num " +
+        (s.result == null ? "muted" : s.result >= 0 ? "up" : "down") + "'>" + (s.result == null ? "open" : fr(s.result)) + "</td></tr>";
+    });
+    h += "</table><p class='note'>Tap a row to show it on the chart. Results ignore spread (about −0.05R a trade).</p>";
+    el.innerHTML = h;
+    el.querySelectorAll("tr[data-bar]").forEach(function (tr) {
+      tr.onclick = function () { focusBar(+tr.getAttribute("data-bar")); };
+    });
+  } else if (tab === "settings") {
+    h += "<div class='sec' style='padding-left:0'>Prices</div>";
+    h += sel("source", "Data", [["paxg", "PAXG live (free)"], ["twelve", "XAU/USD (Twelve Data key)"]]);
+    h += '<label class="f">Twelve Data key<input type="password" data-k="tdKey" value="' + esc(cfg.tdKey) + '" placeholder="optional" style="max-width:150px"></label>';
+    h += "<div class='sec' style='padding-left:0'>Signals</div>";
+    h += sel("mode", "Signal mode", ["Balanced", "Strict", "Aggressive"]);
+    h += sel("swing", "Swing size", ["Large", "Normal", "Small"]);
+    h += sel("sessions", "Sessions (new trades)", ["All day", "London + New York", "London only", "New York only"]);
+    h += inp("minRR", "Minimum reward (× risk)", "0.1");
+    h += inp("slBuffer", "Stop-loss buffer (ATR)", "0.1");
+    h += "<div class='sec' style='padding-left:0'>Risk</div>";
+    h += inp("balance", "Balance ($)", "100");
+    h += inp("riskPct", "Risk per trade (%)", "0.1");
+    h += "<div class='sec' style='padding-left:0'>Chart</div>";
+    h += chk("showAll", "Show all zones and levels");
+    h += chk("showPast", "Show past trades");
+    h += "<p class='note'>Tested defaults: Balanced · Large · All day · reward 1.2 · buffer 0.5 (see BACKTEST-RESULTS.md). <button class='btn' id='resetBtn'>Reset to tested defaults</button></p>";
+    el.innerHTML = h;
+    el.querySelectorAll("[data-k]").forEach(function (c) {
+      c.onchange = function () {
+        var k = c.getAttribute("data-k"), v = c.type === "checkbox" ? c.checked : c.type === "number" ? parseFloat(c.value) : c.value;
+        if (c.type === "number" && !(v > 0)) { c.value = cfg[k]; return; }
+        cfg[k] = v; save();
+        if (k === "source" || k === "tdKey") { if (cfg.source === "twelve" && !cfg.tdKey) return; start(); return; }
+        if (k !== "showAll" && k !== "showPast" && k !== "balance" && k !== "riskPct") compute();
+        tick();
+      };
+    });
+    $("resetBtn").onclick = function () {
+      ["mode", "swing", "sessions", "minRR", "slBuffer"].forEach(function (k) { cfg[k] = A.DEFAULTS[k]; });
+      save(); compute(); tick(); renderTab();
+    };
+  } else {
+    el.innerHTML = "<p class='note' style='color:var(--text)'><b>How it works.</b> Same rules as the Aurum TradingView script and MT5 indicator: " +
+      "BUY when the 4H trend is up (above EMA200) and a bullish candle closes after touching a demand zone (Balanced) or support; SELL is the mirror. " +
+      "Stop beyond the area + 0.5 ATR, target at the next opposite area (1.2R minimum, 3R cap). One trade at a time; 100-candle time limit.</p>" +
+      "<p class='note'><b>Prices.</b> PAXG is a gold-backed token that follows spot gold closely (usually within a few dollars). Your broker's XAUUSD price will differ a little: " +
+      "use the stop and target <i>distances</i>, or the TradingView/MT5 version on your broker's chart for exact prices. Weekend PAXG candles are left out because spot gold is closed. " +
+      "For real XAU/USD, get a free key at twelvedata.com and paste it in Settings (updates every 2 minutes).</p>" +
+      "<p class='note'><b>Backtest.</b> 2012–2022 real XAUUSD 1H: 239 trades, 43% win, profit factor ≈1.2 after spread. Small edge; losing years happen. Demo first.</p>" +
+      "<p class='note'><b>Chart.</b> Drag to move, scroll or pinch to zoom, double-click to reset. WATCH = a setup forming on the live candle (not confirmed until it closes).</p>";
+  }
+}
+
+// ---------------- chart ----------------
+var cv = $("chart"), ctx = cv.getContext("2d");
+var C = {};
+function readColors() {
+  var s = getComputedStyle(document.documentElement);
+  ["bg", "panel", "line", "text", "muted", "grid", "gold", "up", "down", "upbg", "downbg", "demand", "supply", "candle-up", "candle-down"].forEach(function (k) {
+    C[k] = s.getPropertyValue("--" + k).trim();
+  });
+}
+readColors();
+if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { readColors(); dirty(); });
+var view = { spacing: 9, offset: 0, mouse: null };
+var AX = 66, TX = 24, PADR = 6;
+var W = 0, Ht = 0, needDraw = true;
+function dirty() { needDraw = true; }
+function resize() {
+  var r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  W = r.width; Ht = r.height;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Ht * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  dirty();
+}
+window.addEventListener("resize", resize);
+function allBars() { return forming ? closed.concat([forming]) : closed; }
+function xOf(i, n) { return (W - AX) - (n - 1 - i - view.offset + PADR) * view.spacing; }
+function iOf(x, n) { return n - 1 - view.offset + PADR - ((W - AX) - x) / view.spacing; }
+function niceStep(range, target) {
+  var raw = range / target, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+  return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+}
+function draw() {
+  needDraw = false;
+  var bars = allBars(), n = bars.length;
+  ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, Ht);
+  if (!n) return;
+  var pw = W - AX, ph = Ht - TX;
+  var i0 = Math.max(0, Math.floor(iOf(0, n))), i1 = Math.min(n - 1, Math.ceil(iOf(pw, n)));
+  if (i1 < i0) return;
+  var hi = -Infinity, lo = Infinity;
+  for (var i = i0; i <= i1; i++) { hi = Math.max(hi, bars[i].h); lo = Math.min(lo, bars[i].l); }
+  var open = result && result.open;
+  var shown = open || preview;
+  if (shown && shown.bar <= i1 + 1) { hi = Math.max(hi, shown.sl, shown.tp); lo = Math.min(lo, shown.sl, shown.tp); }
+  var pad = (hi - lo) * 0.08 || 1; hi += pad; lo -= pad;
+  function y(p) { return 8 + (hi - p) / (hi - lo) * (ph - 16); }
+  function pOf(yy) { return hi - (yy - 8) / (ph - 16) * (hi - lo); }
+  // grid + price axis
+  var step = niceStep(hi - lo, Math.max(3, ph / 60));
+  ctx.font = "11px ui-monospace,Menlo,Consolas,monospace"; ctx.textBaseline = "middle";
+  for (var p = Math.ceil(lo / step) * step; p <= hi; p += step) {
+    var yy = Math.round(y(p)) + 0.5;
+    ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(pw, yy); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.fillText(fp(p), pw + 6, yy);
+  }
+  // time axis
+  var every = Math.max(1, Math.ceil(90 / view.spacing));
+  var hrs = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168, 336, 720]; every = hrs.find(function (x) { return x >= every; }) || every;
+  ctx.textAlign = "center"; ctx.fillStyle = C.muted;
+  var lastDay = null;
+  for (var j = i0; j <= i1; j++) {
+    var d = new Date(bars[j].t);
+    var dayIdx = Math.floor((bars[j].t - d.getTimezoneOffset() * 60000) / 864e5);
+    if (every < 24 ? d.getHours() % every !== 0 : (d.getHours() !== 0 || dayIdx % (every / 24) !== 0)) continue;
+    var xx = Math.round(xOf(j, n)) + 0.5;
+    ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(xx, 0); ctx.lineTo(xx, ph); ctx.stroke();
+    var lab = every >= 24 || d.getHours() === 0 || lastDay === null
+      ? d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+      : String(d.getHours()).padStart(2, "0") + ":00";
+    lastDay = d.getDate();
+    ctx.fillText(lab, xx, ph + TX / 2);
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, pw, ph); ctx.clip();
+  // zones + levels
+  if (result) {
+    var price = lastPrice || closed[closed.length - 1].c;
+    var na = nearestAreas(price);
+    var zs = cfg.showAll ? result.demand.map(function (z) { return [z, 1]; }).concat(result.supply.map(function (z) { return [z, -1]; }))
+      : [[na.dz, 1], [na.sz, -1]].filter(function (x) { return x[0]; });
+    zs.forEach(function (x) {
+      var z = x[0], x0 = Math.max(0, xOf(z.bar, n) - view.spacing / 2);
+      ctx.fillStyle = x[1] > 0 ? C.demand : C.supply;
+      ctx.fillRect(x0, y(z.top), pw - x0, y(z.bot) - y(z.top));
+      ctx.fillStyle = x[1] > 0 ? C.up : C.down; ctx.textAlign = "right"; ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
+      ctx.fillText((x[1] > 0 ? "Demand" : "Supply") + (z.touch === 0 ? " · fresh" : ""), pw - 8, (y(z.top) + y(z.bot)) / 2);
+    });
+    var ls = cfg.showAll ? result.sup.map(function (l) { return [l, 1]; }).concat(result.res.map(function (l) { return [l, -1]; }))
+      : [[na.sp, 1], [na.rs, -1]].filter(function (x) { return x[0]; });
+    ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
+    ls.forEach(function (x) {
+      var l = x[0], yy = Math.round(y(l.p)) + 0.5, x0 = Math.max(0, xOf(l.bar, n));
+      ctx.strokeStyle = x[1] > 0 ? C.up : C.down;
+      ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(pw, yy); ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle; ctx.textAlign = "right"; ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
+      ctx.fillText((x[1] > 0 ? "Support " : "Resistance ") + fp(l.p), pw - 8, yy - 8);
+    });
+    ctx.setLineDash([]);
+    // trades
+    var sigs = cfg.showPast ? result.signals : (open ? [open] : []);
+    if (preview) sigs = sigs.concat([preview]);
+    sigs.forEach(function (s) {
+      var endBar = s.exitBar != null ? s.exitBar : n - 1;
+      if (endBar < i0 || s.bar > i1) return;
+      var xa = xOf(s.bar, n), xb = s.exitBar != null ? xOf(endBar, n) : pw;
+      var live = s.exitBar == null;
+      ctx.globalAlpha = live ? 1 : 0.55;
+      ctx.fillStyle = C.upbg; var t1 = y(Math.max(s.entry, s.tp)), t2 = y(Math.min(s.entry, s.tp)); ctx.fillRect(xa, t1, xb - xa, t2 - t1);
+      ctx.fillStyle = C.downbg; var u1 = y(Math.max(s.entry, s.sl)), u2 = y(Math.min(s.entry, s.sl)); ctx.fillRect(xa, u1, xb - xa, u2 - u1);
+      ctx.globalAlpha = 1;
+      if (live) {
+        [[s.tp, C.up, "TP"], [s.entry, C.text, "Entry"], [s.sl, C.down, "SL"]].forEach(function (q) {
+          var yy = Math.round(y(q[0])) + 0.5;
+          ctx.strokeStyle = q[1]; ctx.lineWidth = 1; ctx.setLineDash(q[2] === "Entry" ? [2, 3] : []);
+          ctx.beginPath(); ctx.moveTo(xa, yy); ctx.lineTo(pw, yy); ctx.stroke(); ctx.setLineDash([]);
+        });
+      }
+      // marker
+      var b = bars[s.bar], buy = s.side > 0, mx = xOf(s.bar, n);
+      var my = buy ? y(b.l) + 8 : y(b.h) - 8;
+      ctx.fillStyle = s === preview ? C.gold : buy ? C.up : C.down;
+      ctx.beginPath();
+      if (buy) { ctx.moveTo(mx, my); ctx.lineTo(mx - 6, my + 9); ctx.lineTo(mx + 6, my + 9); }
+      else { ctx.moveTo(mx, my); ctx.lineTo(mx - 6, my - 9); ctx.lineTo(mx + 6, my - 9); }
+      ctx.closePath(); ctx.fill();
+      ctx.font = "600 11px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "center";
+      ctx.fillText((s === preview ? "WATCH " : "") + (buy ? "BUY " : "SELL ") + s.grade, mx, buy ? my + 20 : my - 18);
+      if (s.result != null) {
+        var ex = xOf(s.exitBar, n), ey = y(s.how === "Stop loss" ? s.sl : s.how === "Take profit" ? s.tp : bars[s.exitBar].c);
+        ctx.fillStyle = s.result >= 0 ? C.up : C.down;
+        ctx.fillText(fr(s.result), ex, ey + (((s.result >= 0) === buy) ? -10 : 12));
+      }
+    });
+  }
+  // candles
+  var bw = Math.max(1, Math.min(view.spacing * 0.7, view.spacing - 1));
+  for (var k = i0; k <= i1; k++) {
+    var c = bars[k], cx = Math.round(xOf(k, n)), upc = c.c >= c.o;
+    ctx.strokeStyle = ctx.fillStyle = upc ? C["candle-up"] : C["candle-down"];
+    if (k === n - 1 && forming) ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx + 0.5, Math.round(y(c.h))); ctx.lineTo(cx + 0.5, Math.round(y(c.l))); ctx.stroke();
+    var top = Math.round(y(Math.max(c.o, c.c))), bot = Math.round(y(Math.min(c.o, c.c)));
+    ctx.fillRect(Math.round(cx - bw / 2) + 0.5, top, Math.max(1, Math.round(bw)), Math.max(1, bot - top));
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  // last price line
+  var lp = lastPrice != null ? lastPrice : bars[n - 1].c;
+  var ly = Math.round(y(lp)) + 0.5, lastUp = bars[n - 1].c >= bars[n - 1].o;
+  if (ly > 0 && ly < ph) {
+    ctx.strokeStyle = lastUp ? C.up : C.down; ctx.setLineDash([1, 3]);
+    ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(pw, ly); ctx.stroke(); ctx.setLineDash([]);
+    axisTag(ly, fp(lp), lastUp ? C.up : C.down, "#fff");
+  }
+  if (shown && (shown === open || shown === preview)) {
+    [[shown.tp, C.up], [shown.sl, C.down]].forEach(function (q) { var yy = y(q[0]); if (yy > 0 && yy < ph) axisTag(yy, fp(q[0]), q[1], "#fff"); });
+  }
+  // crosshair
+  var m = view.mouse;
+  if (m && m.x < pw && m.y < ph) {
+    ctx.strokeStyle = C.muted; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    var ci = Math.round(iOf(m.x, n)), cxx = Math.round(xOf(ci, n)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(cxx, 0); ctx.lineTo(cxx, ph); ctx.moveTo(0, Math.round(m.y) + 0.5); ctx.lineTo(pw, Math.round(m.y) + 0.5); ctx.stroke();
+    ctx.setLineDash([]);
+    axisTag(m.y, fp(pOf(m.y)), C.text, C.panel);
+    if (ci >= 0 && ci < n) {
+      var cb = bars[ci];
+      var lbl = fdt(cb.t);
+      ctx.font = "11px ui-sans-serif,system-ui,sans-serif"; var tw = ctx.measureText(lbl).width + 12;
+      ctx.fillStyle = C.text; ctx.fillRect(cxx - tw / 2, ph, tw, TX); ctx.fillStyle = C.panel; ctx.textAlign = "center"; ctx.fillText(lbl, cxx, ph + TX / 2);
+      legend(cb);
+    }
+  } else legend(bars[n - 1]);
+  $("toLatest").style.display = view.offset > 3 ? "block" : "none";
+}
+function axisTag(yy, text, bg, fg) {
+  ctx.font = "11px ui-monospace,Menlo,Consolas,monospace";
+  ctx.fillStyle = bg; ctx.fillRect(W - AX, yy - 9, AX, 18);
+  ctx.fillStyle = fg; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(text, W - AX + 6, yy);
+}
+function legend(b) {
+  var ch = b.c - b.o;
+  $("legend").innerHTML = "O <b class='num'>" + fp(b.o) + "</b> H <b class='num'>" + fp(b.h) + "</b> L <b class='num'>" + fp(b.l) + "</b> C <b class='num'>" + fp(b.c) +
+    "</b> <span class='num " + (ch >= 0 ? "up" : "down") + "'>" + (ch >= 0 ? "+" : "") + ch.toFixed(2) + "</span>";
+}
+function clampView() {
+  var n = allBars().length;
+  view.spacing = Math.min(40, Math.max(2, view.spacing));
+  view.offset = Math.min(Math.max(-PADR + 2, view.offset), Math.max(0, n - 20));
+}
+function focusBar(i) {
+  var n = allBars().length, visible = (W - AX) / view.spacing;
+  view.offset = Math.max(0, n - 1 - i + PADR - visible / 2); clampView(); dirty();
+}
+// pointer interaction: drag, wheel, pinch, double-click
+var pts = {}, drag = null, pinch = null;
+cv.addEventListener("pointerdown", function (e) {
+  cv.setPointerCapture(e.pointerId); pts[e.pointerId] = { x: e.offsetX, y: e.offsetY };
+  var ids = Object.keys(pts);
+  if (ids.length === 1) drag = { x: e.offsetX, off: view.offset };
+  else if (ids.length === 2) { var a = pts[ids[0]], b = pts[ids[1]]; pinch = { d: Math.abs(a.x - b.x) || 1, sp: view.spacing }; drag = null; }
+});
+cv.addEventListener("pointermove", function (e) {
+  if (pts[e.pointerId]) pts[e.pointerId] = { x: e.offsetX, y: e.offsetY };
+  var ids = Object.keys(pts);
+  if (pinch && ids.length === 2) { var a = pts[ids[0]], b = pts[ids[1]]; view.spacing = pinch.sp * (Math.abs(a.x - b.x) || 1) / pinch.d; }
+  else if (drag) view.offset = drag.off + (e.offsetX - drag.x) / view.spacing;
+  view.mouse = e.pointerType === "mouse" || !drag ? { x: e.offsetX, y: e.offsetY } : null;
+  clampView(); dirty();
+});
+function up(e) { delete pts[e.pointerId]; if (Object.keys(pts).length < 2) pinch = null; if (!Object.keys(pts).length) drag = null; }
+cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+cv.addEventListener("pointerleave", function () { view.mouse = null; dirty(); });
+cv.addEventListener("wheel", function (e) {
+  e.preventDefault();
+  var n = allBars().length, before = iOf(e.offsetX, n);
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) view.offset += e.deltaX / view.spacing;
+  else {
+    view.spacing *= Math.exp(-e.deltaY * 0.0015); clampView();
+    view.offset += iOf(e.offsetX, n) - before;
+  }
+  clampView(); dirty();
+}, { passive: false });
+cv.addEventListener("dblclick", function () { view.spacing = 9; view.offset = 0; dirty(); });
+$("toLatest").onclick = function () { view.offset = 0; dirty(); };
+
+// ---------------- header + loop ----------------
+function renderHeader() {
+  var bars = allBars(); if (!bars.length) return;
+  var p = lastPrice != null ? lastPrice : bars[bars.length - 1].c;
+  $("price").textContent = fp(p);
+  var ref = bars[Math.max(0, bars.length - 25)].c, ch = p - ref;
+  $("chg").innerHTML = "<span class='" + (ch >= 0 ? "up" : "down") + "'>" + (ch >= 0 ? "+" : "−") + Math.abs(ch).toFixed(2) + " (" + (ch >= 0 ? "+" : "−") + Math.abs(ch / ref * 100).toFixed(2) + "%)</span> <span class='muted'>24h</span>";
+  document.title = fp(p) + " · Aurum Gold Live";
+}
+function tick() { computePreview(); renderHeader(); renderPanel(); dirty(); }
+function loop() { if (needDraw) draw(); requestAnimationFrame(loop); }
+setInterval(function () { if (result) { computePreview(); renderPanel(); } }, 20000);
+
+alertBtn(); resize(); renderTab(); loop(); start();
+window.__aurum = { get result() { return result; }, get closed() { return closed; }, get forming() { return forming; }, cfg: cfg, view: view };
+})();
+</script>
+</body>
+</html>
